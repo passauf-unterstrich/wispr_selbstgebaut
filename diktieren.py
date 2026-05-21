@@ -120,7 +120,9 @@ def stoppe_aufnahme(prozess):
 
 
 def fuege_text_ein(text):
-    pyperclip.copy(text + " ") # Leerzeichen am Ende
+    if not text or not text.strip():
+        return
+    pyperclip.copy(text + " ")
     time.sleep(0.1)
     pyautogui.hotkey("command", "v")
 
@@ -285,7 +287,7 @@ class DiktierApp(rumps.App):
             if self.replacements:
                 text = wende_replacements_an(text, self.replacements)
 
-            if text:
+            if text and text.strip():
                 fuege_text_ein(text)
 
             os.unlink(self.tmp_pfad)

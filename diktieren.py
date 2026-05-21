@@ -54,7 +54,7 @@ MIKROFON = "1" # MacBook Pro Microphone
 # Control-Taste:  {keyboard.Key.ctrl_l}
 # ─────────────────────────────────────────
 
-SHORTCUT = {keyboard.Key.cmd, keyboard.Key.shift, keyboard.KeyCode.from_char('d')}
+SHORTCUT = SHORTCUT = {keyboard.Key.alt_r}
 
 # ─────────────────────────────────────────
 # VOCABULARY
@@ -154,7 +154,7 @@ class DiktierApp(rumps.App):
         self.aktives_modell = AKTIVES_MODELL
 
         self.title = "🎤"
-        rumps.notification("Diktierfunktion", "", "Bereit – Cmd+Shift+D zum Diktieren")
+        rumps.notification("Diktierfunktion", "", "Bereit – option-rechts zum Diktieren")
 
         threading.Thread(target=self.starte_keyboard_listener, daemon=True).start()
         threading.Thread(target=self.lade_modell, daemon=True).start()
@@ -163,7 +163,7 @@ class DiktierApp(rumps.App):
         self.replacements = lade_vocabulary(VOCABULARY_CSV)
         self.initial_prompt = baue_initial_prompt(VOCABULARY_CSV)
         self.title = "🎤"
-        rumps.notification("Diktierfunktion", "", "Bereit – Cmd+Shift+D zum Diktieren")
+        rumps.notification("Diktierfunktion", "", "Bereit – option-rechts zum Diktieren")
 
     def wechsle_modell(self, sender):
         # Häkchen von altem Modell entfernen

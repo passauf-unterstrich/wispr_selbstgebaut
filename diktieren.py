@@ -102,22 +102,6 @@ def wende_replacements_an(text, replacements):
 # AUFNAHME UND EINFÜGEN
 # ─────────────────────────────────────────
 
-def nehme_auf(pfad):
-    befehl = [
-        FFMPEG,
-        "-f", "avfoundation",
-        "-i", ":0",
-        "-ar", "16000",
-        "-ac", "1",
-        "-y",
-        pfad
-    ]
-    subprocess.run(befehl, stderr=subprocess.DEVNULL)
-
-
-def stoppe_aufnahme(prozess):
-    prozess.terminate()
-
 
 def fuege_text_ein(text):
     if not text or not text.strip():
@@ -156,7 +140,6 @@ class DiktierApp(rumps.App):
         self.aktives_modell = AKTIVES_MODELL
 
         self.title = "🎤"
-        rumps.notification("Diktierfunktion", "", "Bereit – option-rechts zum Diktieren")
 
         threading.Thread(target=self.starte_keyboard_listener, daemon=True).start()
         threading.Thread(target=self.lade_modell, daemon=True).start()
@@ -273,6 +256,9 @@ class DiktierApp(rumps.App):
                 "--file", self.tmp_pfad,
             ]
 
+            if self.initial_prompt:
+                befehl += ["--prompt", self.initial_prompt]
+
             ergebnis = subprocess.run(
                 befehl,
                 capture_output=True,
@@ -297,17 +283,6 @@ class DiktierApp(rumps.App):
 
         finally:
             self.title = "🎤"
-
-# ─────────────────────────────────────────
-# APP STARTEN
-# ─────────────────────────────────────────
-
-    def application_did_finish_launching(self, notification):
-        threading.Thread(
-            target=self.starte_keyboard_listener,
-            daemon=True
-        ).start()
-
 
 
 # ─────────────────────────────────────────

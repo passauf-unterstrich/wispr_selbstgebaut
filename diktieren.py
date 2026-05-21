@@ -20,7 +20,7 @@ warnings.filterwarnings("ignore")
 import rumps
 import pyperclip
 import pyautogui
-import whisper
+import re
 from pynput import keyboard
 
 # ─────────────────────────────────────────
@@ -28,11 +28,12 @@ from pynput import keyboard
 # ─────────────────────────────────────────
 
 MODEL = "medium"
-MODEL_DIR = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/modelle"
+MODEL_PATH = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/modelle/ggml-medium.bin"
+WHISPER_CLI = "/opt/homebrew/bin/whisper-cli"
 LANGUAGE = "de"
 VOCABULARY_CSV = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/vocabulary.csv"
 FFMPEG = "/opt/homebrew/bin/ffmpeg"
-MIKROFON = "1"  # MacBook Pro Microphone
+MIKROFON = "1" # MacBook Pro Microphone
 # [0] ZoomAudioDevice
 # [1] MacBook Pro Microphone  ← das wollen wir
 # [2] Microsoft Teams Audio
@@ -79,6 +80,11 @@ def baue_initial_prompt(pfad):
 
 
 def wende_replacements_an(text, replacements):
+    # Whisper Annotationen entfernen: [Lachen], [Musik] etc.
+    text = re.sub(r'\[.*?\]', '', text)
+    text = re.sub(r'\(.*?\)', '', text)
+    text = text.strip()
+    
     for wort, ersetzung in replacements.items():
         text = text.replace(wort, ersetzung)
     return text
@@ -106,7 +112,7 @@ def stoppe_aufnahme(prozess):
 
 
 def fuege_text_ein(text):
-    pyperclip.copy(text)
+    pyperclip.copy(text + " ") # Leerzeichen am Ende
     time.sleep(0.1)
     pyautogui.hotkey("command", "v")
 
@@ -139,7 +145,6 @@ class DiktierApp(rumps.App):
         threading.Thread(target=self.lade_modell, daemon=True).start()
 
     def lade_modell(self):
-        self.modell = whisper.load_model(MODEL, download_root=MODEL_DIR)
         self.replacements = lade_vocabulary(VOCABULARY_CSV)
         self.initial_prompt = baue_initial_prompt(VOCABULARY_CSV)
         self.title = "🎤"
@@ -221,12 +226,32 @@ class DiktierApp(rumps.App):
             if not os.path.exists(self.tmp_pfad):
                 return
 
-            ergebnis = self.modell.transcribe(
-                self.tmp_pfad,
-                language=LANGUAGE,
-                initial_prompt=self.initial_prompt
+            befehl = [
+                WHISPER_CLI,
+                "--language", LANGUAGE,
+                "--model", MODEL_PATH,
+                "--no-timestamps",
+                "--output-txt",
+                "--file", self.tmp_pfad,
+            ]
+
+            ergebnis = subprocess.run(
+                befehl,
+                capture_output=True,
+                text=True
             )
-            text = ergebnis["text"].strip()
+
+            # whisper-cli speichert Output in .txt Datei
+            txt_pfad = self.tmp_pfad + ".txt"
+            if os.path.exists(txt_pfad):
+                with open(txt_pfad, "r") as f:
+                    text = f.read().strip()
+                os.unlink(txt_pfad)
+            else:
+                text = ergebnis.stdout.strip()
+
+            if not text:
+                return
 
             if self.replacements:
                 text = wende_replacements_an(text, self.replacements)

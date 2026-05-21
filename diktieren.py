@@ -54,7 +54,7 @@ MIKROFON = "1" # MacBook Pro Microphone
 # Control-Taste:  {keyboard.Key.ctrl_l}
 # ─────────────────────────────────────────
 
-SHORTCUT = SHORTCUT = {keyboard.Key.alt_r}
+SHORTCUT = {keyboard.Key.alt_r}
 
 # ─────────────────────────────────────────
 # VOCABULARY

@@ -27,8 +27,15 @@ from pynput import keyboard
 # KONFIGURATION
 # ─────────────────────────────────────────
 
-MODEL = "medium"
-MODEL_PATH = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/modelle/ggml-medium.bin"
+# Verfügbare Modelle – hier neue einfach hinzufügen
+MODELLE = {
+    "medium": "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/modelle/ggml-medium.bin",
+    "large-v3": "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/modelle/ggml-large-v3.bin",
+}
+
+# Standardmodell beim Start
+AKTIVES_MODELL = "medium"
+
 WHISPER_CLI = "/opt/homebrew/bin/whisper-cli"
 LANGUAGE = "de"
 VOCABULARY_CSV = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/vocabulary.csv"
@@ -125,10 +132,18 @@ class DiktierApp(rumps.App):
     def __init__(self):
         super().__init__("🎤", quit_button="Beenden")
 
+        # Modell-Untermenü aufbauen
+        modell_menu = rumps.MenuItem("Modell")
+        for name in MODELLE:
+            item = rumps.MenuItem(name, callback=self.wechsle_modell)
+            if name == AKTIVES_MODELL:
+                item.state = True  # Häkchen
+            modell_menu.add(item)
+
         self.menu = [
             rumps.MenuItem("Diktierfunktion aktiv"),
             rumps.separator,
-            rumps.MenuItem("Modell: " + MODEL),
+            modell_menu,
             rumps.MenuItem("Sprache: " + LANGUAGE),
         ]
 
@@ -136,13 +151,12 @@ class DiktierApp(rumps.App):
         self.aktuelle_tasten = set()
         self.ffmpeg_prozess = None
         self.tmp_pfad = None
+        self.aktives_modell = AKTIVES_MODELL
 
-        self.title = "⏳"
+        self.title = "🎤"
+        rumps.notification("Diktierfunktion", "", "Bereit – Cmd+Shift+D zum Diktieren")
 
-        # Listener direkt hier starten
         threading.Thread(target=self.starte_keyboard_listener, daemon=True).start()
-
-        # Whisper laden
         threading.Thread(target=self.lade_modell, daemon=True).start()
 
     def lade_modell(self):
@@ -150,6 +164,16 @@ class DiktierApp(rumps.App):
         self.initial_prompt = baue_initial_prompt(VOCABULARY_CSV)
         self.title = "🎤"
         rumps.notification("Diktierfunktion", "", "Bereit – Cmd+Shift+D zum Diktieren")
+
+    def wechsle_modell(self, sender):
+        # Häkchen von altem Modell entfernen
+        self.menu["Modell"][self.aktives_modell].state = False
+        
+        # Neues Modell aktivieren
+        self.aktives_modell = sender.title
+        self.menu["Modell"][self.aktives_modell].state = True
+        
+        rumps.notification("Modell gewechselt", "", f"Aktiv: {self.aktives_modell}")
 
 # ─────────────────────────────────────────
 # TASTATUR LISTENER
@@ -241,9 +265,9 @@ class DiktierApp(rumps.App):
             befehl = [
                 WHISPER_CLI,
                 "--language", LANGUAGE,
-                "--model", MODEL_PATH,
+                "--model", MODELLE[self.aktives_modell],
                 "--no-timestamps",
-                "--output-txt",
+                "--no-prints",
                 "--file", self.tmp_pfad,
             ]
 
@@ -253,14 +277,7 @@ class DiktierApp(rumps.App):
                 text=True
             )
 
-            # whisper-cli speichert Output in .txt Datei
-            txt_pfad = self.tmp_pfad + ".txt"
-            if os.path.exists(txt_pfad):
-                with open(txt_pfad, "r") as f:
-                    text = f.read().strip()
-                os.unlink(txt_pfad)
-            else:
-                text = ergebnis.stdout.strip()
+            text = ergebnis.stdout.strip()
 
             if not text:
                 return

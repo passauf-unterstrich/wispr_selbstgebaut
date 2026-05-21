@@ -44,6 +44,7 @@ MIKROFON = "1" # MacBook Pro Microphone
 # Cmd+Shift+D:  {keyboard.Key.cmd, keyboard.Key.shift, keyboard.KeyCode.from_char('d')}
 # Ctrl+Space:   {keyboard.Key.ctrl, keyboard.Key.space}
 # Fn-Taste:     {keyboard.Key.f17}  ← testen ob das klappt
+# Control-Taste:  {keyboard.Key.ctrl_l}
 # ─────────────────────────────────────────
 
 SHORTCUT = {keyboard.Key.cmd, keyboard.Key.shift, keyboard.KeyCode.from_char('d')}
@@ -206,13 +207,24 @@ class DiktierApp(rumps.App):
             stderr=subprocess.DEVNULL
         )
 
+        # Timer für 25 Sekunden Warnung
+        self.warn_timer = threading.Timer(25.0, self.zeige_limit_warnung)
+        self.warn_timer.start()
+
+    def zeige_limit_warnung(self):
+        if self.aufnahme_aktiv:
+            self.title = "⚠️"
+
     def beende_aufnahme(self):
         self.aufnahme_aktiv = False
         self.title = "⏳"
 
+        # Timer canceln falls noch läuft
+        if hasattr(self, 'warn_timer'):
+            self.warn_timer.cancel()
+
         if self.ffmpeg_prozess:
             self.ffmpeg_prozess.terminate()
-            time.sleep(0.5)  # ← neu: warten bis ffmpeg sauber beendet
             self.ffmpeg_prozess.wait()
 
         threading.Thread(target=self.transkribiere, daemon=True).start()

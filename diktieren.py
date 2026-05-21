@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 
 import rumps
 import pyperclip
-import pyautogui
+from pynput.keyboard import Controller as KeyboardController
 import re
 from pynput import keyboard
 
@@ -103,12 +103,16 @@ def wende_replacements_an(text, replacements):
 # ─────────────────────────────────────────
 
 
+_kb = KeyboardController()
+
 def fuege_text_ein(text):
     if not text or not text.strip():
         return
     pyperclip.copy(text + " ")
     time.sleep(0.1)
-    pyautogui.hotkey("command", "v")
+    with _kb.pressed(keyboard.Key.cmd):
+        _kb.press('v')
+        _kb.release('v')
 
 # ─────────────────────────────────────────
 # MENU BAR APP

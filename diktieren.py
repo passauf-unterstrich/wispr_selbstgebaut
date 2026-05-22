@@ -106,6 +106,16 @@ def wende_replacements_an(text, replacements):
 
 _kb = KeyboardController()
 
+def berechne_audio_energie(pfad):
+    import wave, struct
+    with wave.open(pfad, 'rb') as wf:
+        frames = wf.readframes(wf.getnframes())
+    if len(frames) < 2:
+        return 0
+    samples = struct.unpack(f'{len(frames)//2}h', frames)
+    return (sum(s**2 for s in samples) / len(samples)) ** 0.5
+
+
 def fuege_text_ein(text):
     if not text or not text.strip():
         return
@@ -340,6 +350,9 @@ class DiktierApp(rumps.App):
         try:
             if not os.path.exists(self.tmp_pfad):
                 return
+            if berechne_audio_energie(self.tmp_pfad) < 150:
+                os.unlink(self.tmp_pfad)
+                return
 
             befehl = [
                 WHISPER_CLI,
@@ -347,6 +360,7 @@ class DiktierApp(rumps.App):
                 "--model", MODELLE[self.aktives_modell],
                 "--no-timestamps",
                 "--no-prints",
+                "--no-speech-thold", "0.8",
                 "--file", self.tmp_pfad,
             ]
 

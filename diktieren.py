@@ -19,9 +19,12 @@ warnings.filterwarnings("ignore")
 
 import rumps
 import pyperclip
+import requests
 from pynput.keyboard import Controller as KeyboardController
 import re
 from pynput import keyboard
+
+import urllib.request
 
 # ─────────────────────────────────────────
 # KONFIGURATION
@@ -46,6 +49,23 @@ MIKROFON = "1" # MacBook Pro Microphone
 # [2] Microsoft Teams Audio
 
 # ─────────────────────────────────────────
+# KONFIGURATION – KI-ASSISTENT
+# ─────────────────────────────────────────
+
+ASSISTANT_STYLE_FILE = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/assistant_style.md"
+
+# Ollama (lokal) – ollama pull llama3.1:8b
+OLLAMA_URL    = "http://localhost:11434/api/chat"
+OLLAMA_MODELL = "llama3.1:8b"
+
+# Claude API – API-Key eintragen oder als Umgebungsvariable setzen
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+CLAUDE_MODELL     = "claude-haiku-4-5-20251001"
+
+KI_MODI          = ["Lokal (Ollama)", "Claude API"]
+AKTIVER_KI_MODUS = "Lokal (Ollama)"
+
+# ─────────────────────────────────────────
 # SHORTCUT KONFIGURATION
 # Hier einfach ändern:
 # Cmd+Shift+D:  {keyboard.Key.cmd, keyboard.Key.shift, keyboard.KeyCode.from_char('d')}
@@ -54,8 +74,11 @@ MIKROFON = "1" # MacBook Pro Microphone
 # Control-Taste:  {keyboard.Key.ctrl_l}
 # ─────────────────────────────────────────
 
-SHORTCUT = {keyboard.Key.alt_r}
-SHORTCUT_KORREKTUR = {keyboard.Key.cmd_r, keyboard.Key.shift_r}
+SHORTCUT           = {keyboard.Key.alt_r}
+SHORTCUT_KI        = {keyboard.Key.ctrl_l}
+SHORTCUT_KORREKTUR = {keyboard.Key.cmd_r,  keyboard.Key.shift_r}
+
+DIKTAT_TIMER_DELAY = 0.10  # Sekunden Wartezeit bevor Diktat startet
 
 # ─────────────────────────────────────────
 # VOCABULARY
@@ -93,11 +116,15 @@ def wende_replacements_an(text, replacements):
     text = re.sub(r'\[.*?\]', '', text)
     text = re.sub(r'\(.*?\)', '', text)
     text = text.strip()
-    
     for wort, ersetzung in replacements.items():
         text = text.replace(wort, ersetzung)
     return text
 
+def lade_style_prompt(pfad):
+    if not pfad or not os.path.exists(pfad):
+        return ""
+    with open(pfad, encoding="utf-8") as f:
+        return f.read().strip()
 
 # ─────────────────────────────────────────
 # AUFNAHME UND EINFÜGEN
@@ -126,6 +153,50 @@ def fuege_text_ein(text):
         _kb.release('v')
 
 # ─────────────────────────────────────────
+# KI-ANFRAGEN
+# ─────────────────────────────────────────
+
+SYSTEM_PROMPT_BASIS = (
+    "Du bist ein persönlicher Assistent. "
+    "Gib AUSSCHLIESSLICH den fertigen Text zurück – nichts weiter. "
+    "Keine Einleitung, kein Kommentar, keine Erklärung, kein Abschluss. "
+    "Nur der Text selbst, so wie er direkt verwendet werden kann. "
+    "Antworte immer auf Deutsch, außer der Befehl verlangt ausdrücklich eine andere Sprache."
+)
+
+
+def frage_ollama(befehl: str, style_prompt: str) -> str:
+    system = SYSTEM_PROMPT_BASIS
+    if style_prompt:
+        system += f"\n\n---\nMein Stil und Beispiele:\n{style_prompt}"
+    payload = {
+        "model": OLLAMA_MODELL,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user",   "content": befehl},
+        ],
+        "stream": False,
+    }
+    response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+    response.raise_for_status()
+    return response.json()["message"]["content"].strip()
+
+
+def frage_claude(befehl: str, style_prompt: str) -> str:
+    import anthropic
+    system = SYSTEM_PROMPT_BASIS
+    if style_prompt:
+        system += f"\n\n---\nMein Stil und Beispiele:\n{style_prompt}"
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    message = client.messages.create(
+        model=CLAUDE_MODELL,
+        max_tokens=1024,
+        system=system,
+        messages=[{"role": "user", "content": befehl}],
+    )
+    return message.content[0].text.strip()
+
+# ─────────────────────────────────────────
 # MENU BAR APP
 # ─────────────────────────────────────────
 
@@ -141,18 +212,35 @@ class DiktierApp(rumps.App):
                 item.state = True  # Häkchen
             modell_menu.add(item)
 
+        ki_modus_menu = rumps.MenuItem("KI-Modus")
+        for name in KI_MODI:
+            item = rumps.MenuItem(name, callback=self.wechsle_ki_modus)
+            if name == AKTIVER_KI_MODUS:
+                item.state = True
+            ki_modus_menu.add(item)
+
         self.menu = [
-            rumps.MenuItem("Diktierfunktion aktiv"),
+            rumps.MenuItem("Diktat: opt-r  |  KI: opt-r + shift-r"),
             rumps.separator,
             modell_menu,
-            rumps.MenuItem("Sprache: " + LANGUAGE),
+            ki_modus_menu,
         ]
 
         self.aufnahme_aktiv = False
         self.aktuelle_tasten = set()
+        self.style_prompt = ""
         self.ffmpeg_prozess = None
         self.tmp_pfad = None
         self.aktives_modell = AKTIVES_MODELL
+
+        self._diktat_timer     = None
+
+        # KI-State
+        self.ki_aufnahme_aktiv = False
+        self.ffmpeg_prozess_ki = None
+        self.tmp_pfad_ki       = None
+        self.aktiver_ki_modus  = AKTIVER_KI_MODUS
+
         self.session_replacements = {}
         self.session_prompt_words = []
         self.korrektur_aktiv = False
@@ -160,13 +248,51 @@ class DiktierApp(rumps.App):
         self.title = "🎤"
 
         threading.Thread(target=self.starte_keyboard_listener, daemon=True).start()
-        threading.Thread(target=self.lade_modell, daemon=True).start()
+        threading.Thread(target=self.lade_alles, daemon=True).start()
 
-    def lade_modell(self):
-        self.replacements = lade_vocabulary(VOCABULARY_CSV)
+    def lade_alles(self):
+        self.replacements   = lade_vocabulary(VOCABULARY_CSV)
         self.initial_prompt = baue_initial_prompt(VOCABULARY_CSV)
+        self.style_prompt   = lade_style_prompt(ASSISTANT_STYLE_FILE)
+        self.pruefe_setup()
         self.title = "🎤"
-        rumps.notification("Diktierfunktion", "", "Bereit – option-rechts zum Diktieren")
+        rumps.notification("Diktierfunktion", "", "Bereit – opt-r: Diktat  |  opt-r + shift-r: KI")
+
+    def pruefe_setup(self):
+        # ── Whisper-Modelle ──────────────────────────────────
+        for name, pfad in MODELLE.items():
+            if not os.path.exists(pfad):
+                self.title = "⬇️"
+                rumps.notification("Setup", f"Lade Whisper-Modell '{name}'...", "Bitte warten (~1–3 GB)")
+                os.makedirs(os.path.dirname(pfad), exist_ok=True)
+                url = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin"
+                try:
+                    urllib.request.urlretrieve(url, pfad)
+                    rumps.notification("Setup", f"Whisper '{name}' bereit ✓", "")
+                except Exception as e:
+                    rumps.notification("Setup Fehler", f"Whisper '{name}' fehlgeschlagen", str(e))
+
+        # ── Ollama installiert? ──────────────────────────────
+        if subprocess.run(["which", "ollama"], capture_output=True).returncode != 0:
+            rumps.notification("Setup", "Ollama fehlt", "Terminal: brew install ollama")
+            return
+
+        # ── Ollama läuft? ────────────────────────────────────
+        try:
+            requests.get("http://localhost:11434", timeout=2)
+        except Exception:
+            rumps.notification("Setup", "Starte Ollama...", "")
+            subprocess.Popen(["ollama", "serve"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(4)
+
+        # ── KI-Modell vorhanden? ─────────────────────────────
+        result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
+        if OLLAMA_MODELL not in result.stdout:
+            self.title = "⬇️"
+            rumps.notification("Setup", f"Lade '{OLLAMA_MODELL}'...", "Dauert einige Minuten (~5 GB)")
+            subprocess.run(["ollama", "pull", OLLAMA_MODELL])
+            rumps.notification("Setup", f"'{OLLAMA_MODELL}' bereit ✓", "")
 
     def lade_vocabulary_neu(self):
         self.replacements = lade_vocabulary(VOCABULARY_CSV)
@@ -251,14 +377,16 @@ class DiktierApp(rumps.App):
         self.korrektur_aktiv = False
 
     def wechsle_modell(self, sender):
-        # Häkchen von altem Modell entfernen
         self.menu["Modell"][self.aktives_modell].state = False
-        
-        # Neues Modell aktivieren
         self.aktives_modell = sender.title
         self.menu["Modell"][self.aktives_modell].state = True
-        
         rumps.notification("Modell gewechselt", "", f"Aktiv: {self.aktives_modell}")
+
+    def wechsle_ki_modus(self, sender):
+        self.menu["KI-Modus"][self.aktiver_ki_modus].state = False
+        self.aktiver_ki_modus = sender.title
+        self.menu["KI-Modus"][self.aktiver_ki_modus].state = True
+        rumps.notification("KI-Modus", "", f"Aktiv: {self.aktiver_ki_modus}")
 
 # ─────────────────────────────────────────
 # TASTATUR LISTENER
@@ -268,31 +396,50 @@ class DiktierApp(rumps.App):
         def on_press(taste):
             try:
                 self.aktuelle_tasten.add(taste)
-                if SHORTCUT.issubset(self.aktuelle_tasten):
-                    if not self.aufnahme_aktiv:
-                        self.starte_aufnahme()
+
+                if SHORTCUT_KI.issubset(self.aktuelle_tasten):
+                    if self._diktat_timer:
+                        self._diktat_timer.cancel()
+                        self._diktat_timer = None
+                    if not self.ki_aufnahme_aktiv and not self.aufnahme_aktiv:
+                        self.starte_ki_aufnahme()
+
                 elif SHORTCUT_KORREKTUR.issubset(self.aktuelle_tasten):
                     if not self.aufnahme_aktiv and not self.korrektur_aktiv:
                         self.korrektur_aktiv = True
                         threading.Thread(target=self.oeffne_korrektur_fenster, daemon=True).start()
+
+                elif SHORTCUT.issubset(self.aktuelle_tasten):
+                    if not self.aufnahme_aktiv and not self.ki_aufnahme_aktiv and self._diktat_timer is None:
+                        self._diktat_timer = threading.Timer(DIKTAT_TIMER_DELAY, self._starte_diktat_wenn_solo)
+                        self._diktat_timer.start()
+
             except Exception:
                 pass
 
         def on_release(taste):
             try:
                 self.aktuelle_tasten.discard(taste)
-                if self.aufnahme_aktiv:
-                    # Prüfen ob eine Shortcut-Taste losgelassen wurde
-                    if taste in SHORTCUT:
-                        self.beende_aufnahme()
+
+                if taste in SHORTCUT and self._diktat_timer:
+                    self._diktat_timer.cancel()
+                    self._diktat_timer = None
+
+                if self.ki_aufnahme_aktiv and taste in SHORTCUT_KI:
+                    self.beende_ki_aufnahme()
+                elif self.aufnahme_aktiv and taste in SHORTCUT:
+                    self.beende_aufnahme()
+
             except Exception:
                 pass
 
-        listener = keyboard.Listener(
-            on_press=on_press,
-            on_release=on_release
-        )
+        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
         listener.start()
+
+    def _starte_diktat_wenn_solo(self):
+        self._diktat_timer = None
+        if not self.ki_aufnahme_aktiv and not self.aufnahme_aktiv:
+            self.starte_aufnahme()
 
 # ─────────────────────────────────────────
 # AUFNAHME STARTEN UND BEENDEN
@@ -321,26 +468,52 @@ class DiktierApp(rumps.App):
         )
 
         # Timer für 25 Sekunden Warnung
-        self.warn_timer = threading.Timer(25.0, self.zeige_limit_warnung)
-        self.warn_timer.start()
+        self._warn_timer = threading.Timer(25.0, self._zeige_limit_warnung)
+        self._warn_timer.start()
 
-    def zeige_limit_warnung(self):
-        if self.aufnahme_aktiv:
-            self.title = "⚠️"
+    def _zeige_limit_warnung(self):
+            if self.aufnahme_aktiv or self.ki_aufnahme_aktiv:
+                self.title = "⚠️"
 
     def beende_aufnahme(self):
         self.aufnahme_aktiv = False
         self.title = "⏳"
 
         # Timer canceln falls noch läuft
-        if hasattr(self, 'warn_timer'):
-            self.warn_timer.cancel()
+        if hasattr(self, '_warn_timer'):
+            self._warn_timer.cancel()
 
         if self.ffmpeg_prozess:
             self.ffmpeg_prozess.terminate()
             self.ffmpeg_prozess.wait()
 
         threading.Thread(target=self.transkribiere, daemon=True).start()
+
+# ─────────────────────────────────────────
+# KI-ASSISTENT – AUFNAHME
+# ─────────────────────────────────────────
+
+    def starte_ki_aufnahme(self):
+        self.ki_aufnahme_aktiv = True
+        self.title = "🟣"
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        self.tmp_pfad_ki = tmp.name
+        tmp.close()
+        befehl = [FFMPEG, "-f", "avfoundation", "-i", f":{MIKROFON}",
+                  "-ar", "16000", "-ac", "1", "-y", self.tmp_pfad_ki]
+        self.ffmpeg_prozess_ki = subprocess.Popen(befehl, stderr=subprocess.DEVNULL)
+        self._warn_timer = threading.Timer(25.0, self._zeige_limit_warnung)
+        self._warn_timer.start()
+
+    def beende_ki_aufnahme(self):
+        self.ki_aufnahme_aktiv = False
+        self.title = "⏳"
+        if hasattr(self, '_warn_timer'):
+            self._warn_timer.cancel()
+        if self.ffmpeg_prozess_ki:
+            self.ffmpeg_prozess_ki.terminate()
+            self.ffmpeg_prozess_ki.wait()
+        threading.Thread(target=self.transkribiere_ki, daemon=True).start()
 
 # ─────────────────────────────────────────
 # TRANSKRIPTION
@@ -398,6 +571,50 @@ class DiktierApp(rumps.App):
         finally:
             self.title = "🎤"
 
+# ─────────────────────────────────────────
+# KI-ASSISTENT – TRANSKRIPTION + KI-ANFRAGE
+# ─────────────────────────────────────────
+
+    def transkribiere_ki(self):
+        try:
+            if not os.path.exists(self.tmp_pfad_ki):
+                return
+            if berechne_audio_energie(self.tmp_pfad_ki) < 150:
+                os.unlink(self.tmp_pfad_ki)
+                return
+
+            befehl = [
+                WHISPER_CLI,
+                "--language", LANGUAGE,
+                "--model", MODELLE[self.aktives_modell],
+                "--no-timestamps",
+                "--no-prints",
+                "--no-speech-thold", "0.8",
+                "--file", self.tmp_pfad_ki,
+            ]
+            ergebnis = subprocess.run(befehl, capture_output=True, text=True)
+            sprachbefehl = ergebnis.stdout.strip()
+
+            if not sprachbefehl:
+                os.unlink(self.tmp_pfad_ki)
+                return
+
+            self.title = "🤖"
+            self.style_prompt = lade_style_prompt(ASSISTANT_STYLE_FILE)
+
+            if self.aktiver_ki_modus == "Claude API":
+                antwort = frage_claude(sprachbefehl, self.style_prompt)
+            else:
+                antwort = frage_ollama(sprachbefehl, self.style_prompt)
+
+            if antwort:
+                fuege_text_ein(antwort)
+            os.unlink(self.tmp_pfad_ki)
+
+        except Exception as e:
+            rumps.notification("Fehler (KI)", "", str(e))
+        finally:
+            self.title = "🎤"
 
 # ─────────────────────────────────────────
 # HAUPTPROGRAMM

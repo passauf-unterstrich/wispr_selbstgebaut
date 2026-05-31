@@ -6,6 +6,8 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 echo ""
 echo "🎤 Setup: Diktierfunktion + KI-Assistent"
 echo "─────────────────────────────────────────"
@@ -21,30 +23,54 @@ fi
 
 # ── Abhängigkeiten ──────────────────────────────────────────
 echo ""
-echo "📦 Installiere Abhängigkeiten (whisper-cli, ffmpeg, ollama)..."
+echo "📦 Installiere whisper-cli, ffmpeg, ollama..."
 brew install whisper-cli ffmpeg ollama
 
-# ── Python-Pakete ───────────────────────────────────────────
+# ── Python venv ─────────────────────────────────────────────
+echo ""
+echo "🐍 Erstelle virtuelle Python-Umgebung (venv)..."
+python3 -m venv "$SCRIPT_DIR/venv"
+echo "✓ venv erstellt"
+
+# ── Python-Pakete in venv ───────────────────────────────────
 echo ""
 echo "🐍 Installiere Python-Pakete..."
-pip3 install --break-system-packages rumps pyperclip requests pynput anthropic
+"$SCRIPT_DIR/venv/bin/pip" install --upgrade pip --quiet
+"$SCRIPT_DIR/venv/bin/pip" install rumps pyperclip requests pynput anthropic --quiet
+echo "✓ Pakete installiert"
 
 # ── Ollama als Dienst ───────────────────────────────────────
 echo ""
 echo "🤖 Starte Ollama-Dienst..."
 brew services start ollama
 
+# ── Alias in ~/.zshrc ───────────────────────────────────────
+echo ""
+ALIAS_LINE="alias diktieren=\"cd '$SCRIPT_DIR' && '$SCRIPT_DIR/venv/bin/python3' diktieren.py\""
+
+if grep -q "alias diktieren=" ~/.zshrc 2>/dev/null; then
+    echo "✓ Alias bereits vorhanden"
+else
+    echo "$ALIAS_LINE" >> ~/.zshrc
+    echo "✓ Alias 'diktieren' zu ~/.zshrc hinzugefügt"
+fi
+
 # ── Barrierefreiheit ────────────────────────────────────────
 echo ""
-echo "⚠️  Wichtig: Barrierefreiheit aktivieren"
-echo "   Systemeinstellungen → Datenschutz & Sicherheit → Barrierefreiheit"
-echo "   → Terminal (oder deine Python-App) dort eintragen"
-echo ""
-
-# ── Anthropic API Key (optional) ────────────────────────────
 echo "─────────────────────────────────────────"
+echo "⚠️  Wichtig: Barrierefreiheit aktivieren"
+echo ""
+echo "   Systemeinstellungen → Datenschutz & Sicherheit"
+echo "   → Barrierefreiheit → Terminal hinzufügen"
+echo ""
+echo "   Ohne diese Einstellung funktionieren die"
+echo "   Tastatur-Shortcuts nicht."
+echo "─────────────────────────────────────────"
+
+# ── Claude API Key (optional) ────────────────────────────────
+echo ""
 echo "Claude API (optional):"
-echo "Falls du Claude API nutzen möchtest, trage deinen Key ein:"
+echo "Falls du Claude API nutzen möchtest:"
 echo ""
 echo "  echo 'export ANTHROPIC_API_KEY=\"sk-ant-...\"' >> ~/.zshrc"
 echo "  source ~/.zshrc"
@@ -54,8 +80,9 @@ echo ""
 echo "─────────────────────────────────────────"
 echo "✅ Setup abgeschlossen!"
 echo ""
-echo "Starten mit:"
-echo "  python3 diktieren.py"
+echo "Neues Terminal öffnen, dann starten mit:"
+echo ""
+echo "  diktieren"
 echo ""
 echo "Beim ersten Start werden Whisper- und KI-Modelle"
 echo "automatisch heruntergeladen (~6 GB, einmalig)."

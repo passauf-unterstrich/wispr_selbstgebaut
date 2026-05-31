@@ -3,7 +3,7 @@
 Lokale Diktierfunktion – Menu Bar App
 ======================================
 Läuft als Icon in der Menüleiste.
-Globaler Shortcut: Cmd+Shift+D halten → aufnehmen → loslassen → Text erscheint.
+Globaler Shortcut: alt_r halten → aufnehmen → loslassen → Text erscheint.
 Startet automatisch beim Mac-Start.
 """
 
@@ -79,6 +79,17 @@ SHORTCUT_KI        = {keyboard.Key.ctrl_l}
 SHORTCUT_KORREKTUR = {keyboard.Key.cmd_r,  keyboard.Key.shift_r}
 
 DIKTAT_TIMER_DELAY = 0.10  # Sekunden Wartezeit bevor Diktat startet
+
+def shortcut_als_text(shortcut):
+    namen = {
+        keyboard.Key.alt_r:   "opt-r",
+        keyboard.Key.ctrl_l:  "ctrl-l",
+        keyboard.Key.ctrl_r:  "ctrl-r",
+        keyboard.Key.cmd_r:   "cmd-r",
+        keyboard.Key.shift_r: "shift-r",
+        keyboard.Key.shift:   "shift",
+    }
+    return " + ".join(namen.get(k, str(k)) for k in shortcut)
 
 # ─────────────────────────────────────────
 # VOCABULARY
@@ -220,10 +231,11 @@ class DiktierApp(rumps.App):
             ki_modus_menu.add(item)
 
         self.menu = [
-            rumps.MenuItem("Diktat: opt-r  |  KI: opt-r + shift-r"),
+            rumps.MenuItem(f"Diktat: {shortcut_als_text(SHORTCUT)}  |  KI: {shortcut_als_text(SHORTCUT_KI)}"),
             rumps.separator,
             modell_menu,
             ki_modus_menu,
+            rumps.MenuItem("Kleinschreibung", callback=self.wechsle_kleinschreibung),
         ]
 
         self.aufnahme_aktiv = False
@@ -240,6 +252,10 @@ class DiktierApp(rumps.App):
         self.ffmpeg_prozess_ki = None
         self.tmp_pfad_ki       = None
         self.aktiver_ki_modus  = AKTIVER_KI_MODUS
+        self.ki_kontext        = ""
+
+        #Kleinschreibung State
+        self.kleinschreibung_aktiv = False
 
         self.session_replacements = {}
         self.session_prompt_words = []
@@ -256,7 +272,7 @@ class DiktierApp(rumps.App):
         self.style_prompt   = lade_style_prompt(ASSISTANT_STYLE_FILE)
         self.pruefe_setup()
         self.title = "🎤"
-        rumps.notification("Diktierfunktion", "", "Bereit – opt-r: Diktat  |  opt-r + shift-r: KI")
+        rumps.notification("Diktierfunktion", "", f"Bereit – {shortcut_als_text(SHORTCUT)}: Diktat  |  {shortcut_als_text(SHORTCUT_KI)}: KI")
 
     def pruefe_setup(self):
         # ── Whisper-Modelle ──────────────────────────────────
@@ -388,6 +404,12 @@ class DiktierApp(rumps.App):
         self.menu["KI-Modus"][self.aktiver_ki_modus].state = True
         rumps.notification("KI-Modus", "", f"Aktiv: {self.aktiver_ki_modus}")
 
+    def wechsle_kleinschreibung(self, sender):
+        self.kleinschreibung_aktiv = not self.kleinschreibung_aktiv
+        sender.state = self.kleinschreibung_aktiv
+        status = "an" if self.kleinschreibung_aktiv else "aus"
+        rumps.notification("Kleinschreibung", "", f"Kleinschreibung {status}")
+
 # ─────────────────────────────────────────
 # TASTATUR LISTENER
 # ─────────────────────────────────────────
@@ -494,6 +516,12 @@ class DiktierApp(rumps.App):
 # ─────────────────────────────────────────
 
     def starte_ki_aufnahme(self):
+        # Zwischenablage als Kontext lesen (Nutzer kopiert vorher manuell mit Cmd+C)
+        self.ki_kontext = pyperclip.paste().strip()
+
+        self.ki_aufnahme_aktiv = True
+        self.title = "🟣"
+
         self.ki_aufnahme_aktiv = True
         self.title = "🟣"
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -560,7 +588,10 @@ class DiktierApp(rumps.App):
             if self.session_replacements:
                 text = wende_replacements_an(text, self.session_replacements)
 
-            if text and text.strip():
+            if self.kleinschreibung_aktiv:
+                text = text.lower()
+
+            if text.strip():
                 fuege_text_ein(text)
 
             os.unlink(self.tmp_pfad)
@@ -601,6 +632,15 @@ class DiktierApp(rumps.App):
 
             self.title = "🤖"
             self.style_prompt = lade_style_prompt(ASSISTANT_STYLE_FILE)
+
+            if self.ki_kontext:
+                prompt = (
+                    f"Der Nutzer hat folgenden Text auf dem Bildschirm markiert:\n"
+                    f"\"\"\"\n{self.ki_kontext}\n\"\"\"\n\n"
+                    f"Aufgabe des Nutzers: {sprachbefehl}"
+                )
+            else:
+                prompt = sprachbefehl
 
             if self.aktiver_ki_modus == "Claude API":
                 antwort = frage_claude(sprachbefehl, self.style_prompt)

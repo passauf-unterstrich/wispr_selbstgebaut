@@ -5,5 +5,21 @@
   "kleinschreibung_default": false,
   "mikrofon": "default",
   "ollama_modell": "llama3.1:8b",
-  "claude_modell": "claude-haiku-4-5-20251001"
+  "claude_modell": "claude-haiku-4-5-20251001",
+  "min_aufnahme_sekunden": 0.8,
+  "halluzination_blockliste": [
+    "Vielen Dank.",
+    "Vielen Dank fürs Zuschauen.",
+    "Vielen Dank fürs Zusehen.",
+    "Untertitel von Stephanie Geiges",
+    "Untertitel im Auftrag des ZDF",
+    "Untertitelung des ZDF",
+    "Untertitelung aufgrund der Amara.org-Community",
+    "Amara.org",
+    "Thanks for watching!",
+    "Thank you."
+  ],
+  "vad_chunk_ziel_sek": 20,
+  "vad_chunk_max_sek": 45,
+  "vad_min_pause_ms": 600
 }

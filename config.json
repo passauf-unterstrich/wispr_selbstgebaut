@@ -1,9 +1,0 @@
-{
-  "aktives_modell": "medium",
-  "aktiver_ki_modus": "Lokal (Ollama)",
-  "sprache": "de",
-  "kleinschreibung_default": false,
-  "mikrofon": "default",
-  "ollama_modell": "llama3.1:8b",
-  "claude_modell": "claude-haiku-4-5-20251001"
-}

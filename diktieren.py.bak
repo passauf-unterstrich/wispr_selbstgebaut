@@ -54,9 +54,6 @@ VOCABULARY_CSV = str(SCRIPT_DIR / "vocabulary.csv")
 MIKROFON = "default"
 MIN_AUFNAHME_SEK = 0.8
 HALLUZINATION_BLOCKLISTE = []
-VAD_CHUNK_ZIEL_SEK = 20
-VAD_CHUNK_MAX_SEK = 45
-VAD_MIN_PAUSE_MS = 600
 
 # ─────────────────────────────────────────
 # CONFIG-DATEI LADEN (überschreibt Defaults oben)
@@ -71,9 +68,6 @@ if _config_path.exists():
         MIKROFON       = _cfg.get("mikrofon",       MIKROFON)
         MIN_AUFNAHME_SEK        = _cfg.get("min_aufnahme_sekunden", 0.8)
         HALLUZINATION_BLOCKLISTE = _cfg.get("halluzination_blockliste", [])
-        VAD_CHUNK_ZIEL_SEK = int(_cfg.get("vad_chunk_ziel_sek", 20))
-        VAD_CHUNK_MAX_SEK  = int(_cfg.get("vad_chunk_max_sek", 45))
-        VAD_MIN_PAUSE_MS   = int(_cfg.get("vad_min_pause_ms", 600))
     except Exception as _e:
         print(f"⚠️  config.json konnte nicht gelesen werden: {_e}")
 
@@ -173,21 +167,6 @@ def shortcut_als_text(shortcut):
         keyboard.Key.shift:   "shift",
     }
     return " + ".join(namen.get(k, str(k)) for k in shortcut)
-
-
-# ─────────────────────────────────────────
-# VAD-INITIALISIERUNG (Silero via soundfile, umgeht torchaudio-Bug)
-# ─────────────────────────────────────────
-_vad_modell = None
-_vad_verfuegbar = False
-try:
-    import soundfile as _sf
-    import torch as _torch
-    from silero_vad import load_silero_vad as _load_vad, get_speech_timestamps as _vad_stamps
-    _vad_modell = _load_vad()
-    _vad_verfuegbar = True
-except Exception as _e:
-    print(f"⚠️  VAD nicht verfügbar ({_e}) – Fallback auf Alt-Verhalten")
 
 # ─────────────────────────────────────────
 # DEBUG-LOGGING
@@ -663,18 +642,14 @@ class DiktierApp(rumps.App):
         self.tmp_pfad = tmp.name
         tmp.close()
 
-        # Byte-Offset in der WAV, ab dem beim nächsten Schnitt gemessen wird
-        # (fürs Restsegment am Ende)
-        self.schnitt_offset_sample = 0
-
         befehl = [
             FFMPEG,
             "-f", "avfoundation",
             "-i", f":{finde_mikrofon_index(MIKROFON)}",
             "-ar", "16000",
             "-ac", "1",
-            "-flush_packets", "1",
-            "-avioflags", "direct",
+            "-flush_packets", "1",   # jedes Paket sofort auf Platte
+            "-avioflags", "direct",  # OS-Buffer umgehen
             "-y",
             self.tmp_pfad
         ]
@@ -683,13 +658,11 @@ class DiktierApp(rumps.App):
             stdin=subprocess.PIPE,
             stderr=(open("/tmp/diktieren-ffmpeg.log", "a") if DEBUG else subprocess.DEVNULL),
         )
-        _debug_log(f"Aufnahme Diktat gestartet, VAD={_vad_verfuegbar}")
+        _debug_log(f"Aufnahme Diktat gestartet, Mikro-Index={finde_mikrofon_index(MIKROFON)}")
 
-        # VAD-Cutter-Thread starten (nur wenn VAD verfügbar)
-        if _vad_verfuegbar:
-            self._cutter_stop = threading.Event()
-            self._cutter_thread = threading.Thread(target=self._vad_cutter, daemon=True)
-            self._cutter_thread.start()
+        # Timer für 25 Sekunden Warnung
+        self._warn_timer = threading.Timer(25.0, self._zeige_limit_warnung)
+        self._warn_timer.start()
 
     def _zeige_limit_warnung(self):
             if self.aufnahme_aktiv or self.ki_aufnahme_aktiv:
@@ -700,14 +673,13 @@ class DiktierApp(rumps.App):
         dauer = time.time() - getattr(self, "aufnahme_start_zeit", 0)
         self.title = "⏳"
 
-        # Cutter zuerst stoppen (nicht mitten im Zyklus schneiden)
-        if hasattr(self, "_cutter_stop"):
-            self._cutter_stop.set()
+        if hasattr(self, '_warn_timer'):
+            self._warn_timer.cancel()
 
         if self.ffmpeg_prozess:
             _beende_ffmpeg_sauber(self.ffmpeg_prozess)
 
-        # Zu kurz → verwerfen
+        # Zu kurz → verwerfen (versehentlicher Trigger)
         if dauer < MIN_AUFNAHME_SEK:
             self.title = "🎤"
             try:
@@ -717,7 +689,6 @@ class DiktierApp(rumps.App):
                 pass
             return
 
-        # Restlichen Teil (ab schnitt_offset_sample bis Ende) transkribieren
         threading.Thread(target=self.transkribiere, daemon=True).start()
 
 # ─────────────────────────────────────────
@@ -768,33 +739,9 @@ class DiktierApp(rumps.App):
 # ─────────────────────────────────────────
 
     def transkribiere(self):
-        """Wird beim Aufnahme-Ende aufgerufen: verarbeitet den Rest ab letztem VAD-Schnitt.
-        Wenn VAD nicht verfügbar war, wird die komplette WAV verarbeitet."""
         try:
             if not os.path.exists(self.tmp_pfad):
                 return
-            # Bei VAD: nur den Teil ab schnitt_offset_sample nehmen
-            if _vad_verfuegbar and getattr(self, "schnitt_offset_sample", 0) > 0:
-                try:
-                    audio_np, sr = _sf.read(self.tmp_pfad, dtype="float32")
-                    rest = audio_np[self.schnitt_offset_sample:]
-                    if len(rest) / sr < 0.5:
-                        # Rest zu kurz zum Transkribieren
-                        try: os.unlink(self.tmp_pfad)
-                        except: pass
-                        self.title = "🎤"
-                        return
-                    tmp2 = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-                    _sf.write(tmp2.name, rest, sr, subtype="PCM_16")
-                    tmp2.close()
-                    self._transkribiere_wav(tmp2.name, ausschnitt=False)
-                    try: os.unlink(self.tmp_pfad)
-                    except: pass
-                    self.title = "🎤"
-                    return
-                except Exception as e:
-                    _debug_log(f"Rest-Fallback: {e}")
-                    # Fallback auf komplette Datei
             if berechne_audio_energie(self.tmp_pfad) < 150:
                 os.unlink(self.tmp_pfad)
                 return
@@ -920,133 +867,6 @@ class DiktierApp(rumps.App):
 # ─────────────────────────────────────────
 # HAUPTPROGRAMM
 # ─────────────────────────────────────────
-
-    # ─────────────────────────────────────────
-    # VAD-BASIERTES LIVE-CHUNKING
-    # ─────────────────────────────────────────
-
-    def _vad_cutter(self):
-        """Läuft parallel zur Aufnahme. Prüft alle 2s, ob geschnitten werden soll."""
-        SAMPLE_RATE = 16000
-        while not self._cutter_stop.is_set():
-            self._cutter_stop.wait(2.0)
-            if self._cutter_stop.is_set():
-                break
-            try:
-                if not os.path.exists(self.tmp_pfad):
-                    continue
-                try:
-                    audio_np, sr = _sf.read(self.tmp_pfad, dtype="float32")
-                except Exception as e:
-                    _debug_log(f"VAD-Read-Fehler: {e}")
-                    continue
-                if sr != SAMPLE_RATE:
-                    continue
-                offset = self.schnitt_offset_sample
-                aktuell = audio_np[offset:]
-                dauer_sek = len(aktuell) / SAMPLE_RATE
-                _debug_log(f"Cutter: {dauer_sek:.1f}s seit letztem Schnitt")
-                if dauer_sek < VAD_CHUNK_ZIEL_SEK:
-                    continue
-                schnitt_sample = self._finde_schnittstelle(aktuell, dauer_sek)
-                if schnitt_sample is None:
-                    continue
-                start_sample = offset
-                end_sample   = offset + schnitt_sample
-                ausschnitt = audio_np[start_sample:end_sample]
-                self.schnitt_offset_sample = end_sample
-                threading.Thread(
-                    target=self._transkribiere_ausschnitt,
-                    args=(ausschnitt, sr),
-                    daemon=True,
-                ).start()
-            except Exception as e:
-                _debug_log(f"Cutter-Fehler: {e}")
-
-    def _finde_schnittstelle(self, audio_np, dauer_sek):
-        """Sucht Pause im Bereich ZIEL..MAX. Rückgabe: Sample-Index oder None."""
-        SAMPLE_RATE = 16000
-        try:
-            audio_torch = _torch.from_numpy(audio_np)
-            segmente = _vad_stamps(
-                audio_torch, _vad_modell,
-                sampling_rate=SAMPLE_RATE,
-                min_silence_duration_ms=VAD_MIN_PAUSE_MS,
-                min_speech_duration_ms=250,
-                return_seconds=False,
-            )
-        except Exception as e:
-            _debug_log(f"VAD-Analyse-Fehler: {e}")
-            return None
-        ziel_sample = VAD_CHUNK_ZIEL_SEK * SAMPLE_RATE
-        max_sample  = VAD_CHUNK_MAX_SEK  * SAMPLE_RATE
-        _debug_log(f"VAD: {len(segmente)} Segmente, dauer={dauer_sek:.1f}s")
-        for seg in reversed(segmente):
-            ende = seg["end"]
-            if ziel_sample <= ende <= max_sample:
-                schnitt = ende + int(0.3 * SAMPLE_RATE)
-                schnitt = min(schnitt, len(audio_np))
-                _debug_log(f"VAD-Schnitt bei {schnitt/SAMPLE_RATE:.1f}s")
-                return schnitt
-        if dauer_sek >= VAD_CHUNK_MAX_SEK:
-            _debug_log(f"Notfall-Schnitt bei {VAD_CHUNK_MAX_SEK}s")
-            return max_sample
-        return None
-
-    def _transkribiere_ausschnitt(self, audio_np, sr):
-        """Schreibt Numpy in WAV, ruft Whisper darauf auf."""
-        try:
-            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            _sf.write(tmp.name, audio_np, sr, subtype="PCM_16")
-            tmp.close()
-            self._transkribiere_wav(tmp.name, ausschnitt=True)
-        except Exception as e:
-            _debug_log(f"Ausschnitt-Fehler: {e}")
-
-    def _transkribiere_wav(self, wav_pfad, ausschnitt=False):
-        """Whisper-Aufruf + Text einfügen."""
-        try:
-            if not os.path.exists(wav_pfad):
-                return
-            if berechne_audio_energie(wav_pfad) < 150:
-                try: os.unlink(wav_pfad)
-                except: pass
-                return
-            befehl = [
-                WHISPER_CLI,
-                "--language", LANGUAGE,
-                "--model", MODELLE[self.aktives_modell],
-                "--no-timestamps", "--no-prints",
-                "--no-speech-thold", "0.8",
-                "--file", wav_pfad,
-            ]
-            full_prompt = self.initial_prompt
-            if self.session_prompt_words:
-                extra = ", ".join(self.session_prompt_words)
-                full_prompt = (full_prompt + ", " + extra) if full_prompt else extra
-            if full_prompt:
-                befehl += ["--prompt", full_prompt]
-            _t0 = time.time()
-            ergebnis = subprocess.run(befehl, capture_output=True, text=True)
-            _debug_log(f"Whisper-{'Chunk' if ausschnitt else 'Rest'} in {time.time()-_t0:.1f}s")
-            text = ergebnis.stdout.strip()
-            if not text or text in HALLUZINATION_BLOCKLISTE:
-                try: os.unlink(wav_pfad)
-                except: pass
-                return
-            if self.replacements:
-                text = wende_replacements_an(text, self.replacements)
-            if self.session_replacements:
-                text = wende_replacements_an(text, self.session_replacements)
-            if self.kleinschreibung_aktiv:
-                text = text.lower()
-            if text.strip():
-                fuege_text_ein(text)
-            try: os.unlink(wav_pfad)
-            except: pass
-        except Exception as e:
-            _debug_log(f"Whisper-Fehler: {e}")
-
 
 if __name__ == "__main__":
     app = DiktierApp()

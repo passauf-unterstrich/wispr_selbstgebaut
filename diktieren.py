@@ -54,6 +54,20 @@ VOCABULARY_CSV = str(SCRIPT_DIR / "vocabulary.csv")
 MIKROFON = "default"
 
 # ─────────────────────────────────────────
+# CONFIG-DATEI LADEN (überschreibt Defaults oben)
+# ─────────────────────────────────────────
+import json as _json
+_config_path = SCRIPT_DIR / "config.json"
+if _config_path.exists():
+    try:
+        _cfg = _json.loads(_config_path.read_text())
+        AKTIVES_MODELL = _cfg.get("aktives_modell", AKTIVES_MODELL)
+        LANGUAGE       = _cfg.get("sprache",        LANGUAGE)
+        MIKROFON       = _cfg.get("mikrofon",       MIKROFON)
+    except Exception as _e:
+        print(f"⚠️  config.json konnte nicht gelesen werden: {_e}")
+
+# ─────────────────────────────────────────
 # KONFIGURATION – KI-ASSISTENT
 # ─────────────────────────────────────────
 
@@ -69,6 +83,16 @@ CLAUDE_MODELL     = "claude-haiku-4-5-20251001"
 
 KI_MODI          = ["Lokal (Ollama)", "Claude API"]
 AKTIVER_KI_MODUS = "Lokal (Ollama)"
+
+# KI-Modelle aus config.json (falls vorhanden)
+if _config_path.exists():
+    try:
+        _cfg2 = _json.loads(_config_path.read_text())
+        OLLAMA_MODELL = _cfg2.get("ollama_modell", OLLAMA_MODELL)
+        CLAUDE_MODELL = _cfg2.get("claude_modell", CLAUDE_MODELL)
+        AKTIVER_KI_MODUS = _cfg2.get("aktiver_ki_modus", AKTIVER_KI_MODUS)
+    except Exception:
+        pass
 
 # ─────────────────────────────────────────
 # SHORTCUT KONFIGURATION
@@ -260,7 +284,7 @@ class DiktierApp(rumps.App):
         self.ki_kontext        = ""
 
         #Kleinschreibung State
-        self.kleinschreibung_aktiv = False
+        self.kleinschreibung_aktiv = bool(_json.loads((SCRIPT_DIR/"config.json").read_text()).get("kleinschreibung_default", False)) if (SCRIPT_DIR/"config.json").exists() else False
 
         self.session_replacements = {}
         self.session_prompt_words = []

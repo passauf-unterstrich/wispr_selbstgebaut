@@ -169,6 +169,27 @@ def shortcut_als_text(shortcut):
     return " + ".join(namen.get(k, str(k)) for k in shortcut)
 
 # ─────────────────────────────────────────
+# DEBUG-LOGGING
+# ─────────────────────────────────────────
+DEBUG = False
+try:
+    DEBUG = bool(_json.loads((SCRIPT_DIR / "config.json").read_text()).get("debug", False))
+except Exception:
+    pass
+
+DEBUG_LOG = "/tmp/diktieren-debug.log"
+
+def _debug_log(msg):
+    if not DEBUG:
+        return
+    try:
+        import datetime as _dt
+        with open(DEBUG_LOG, "a") as f:
+            f.write(f"[{_dt.datetime.now().isoformat(timespec='seconds')}] {msg}\n")
+    except Exception:
+        pass
+
+# ─────────────────────────────────────────
 # VOCABULARY
 # ─────────────────────────────────────────
 
@@ -253,6 +274,25 @@ def fuege_text_ein(text):
             pyperclip.copy(alte_zwischenablage)
         except Exception:
             pass
+
+
+def _beende_ffmpeg_sauber(prozess, timeout=2.0):
+    """Sendet 'q' auf stdin – ffmpeg schreibt den Buffer noch fertig raus.
+    Fallback auf terminate() falls das nicht klappt."""
+    if not prozess:
+        return
+    try:
+        if prozess.stdin:
+            prozess.stdin.write(b"q\n")
+            prozess.stdin.flush()
+            prozess.stdin.close()
+        prozess.wait(timeout=timeout)
+    except Exception:
+        try:
+            prozess.terminate()
+            prozess.wait(timeout=1.0)
+        except Exception:
+            prozess.kill()
 
 # ─────────────────────────────────────────
 # KI-ANFRAGEN
@@ -608,13 +648,17 @@ class DiktierApp(rumps.App):
             "-i", f":{finde_mikrofon_index(MIKROFON)}",
             "-ar", "16000",
             "-ac", "1",
+            "-flush_packets", "1",   # jedes Paket sofort auf Platte
+            "-avioflags", "direct",  # OS-Buffer umgehen
             "-y",
             self.tmp_pfad
         ]
         self.ffmpeg_prozess = subprocess.Popen(
             befehl,
-            stderr=subprocess.DEVNULL
+            stdin=subprocess.PIPE,
+            stderr=(open("/tmp/diktieren-ffmpeg.log", "a") if DEBUG else subprocess.DEVNULL),
         )
+        _debug_log(f"Aufnahme Diktat gestartet, Mikro-Index={finde_mikrofon_index(MIKROFON)}")
 
         # Timer für 25 Sekunden Warnung
         self._warn_timer = threading.Timer(25.0, self._zeige_limit_warnung)
@@ -633,8 +677,7 @@ class DiktierApp(rumps.App):
             self._warn_timer.cancel()
 
         if self.ffmpeg_prozess:
-            self.ffmpeg_prozess.terminate()
-            self.ffmpeg_prozess.wait()
+            _beende_ffmpeg_sauber(self.ffmpeg_prozess)
 
         # Zu kurz → verwerfen (versehentlicher Trigger)
         if dauer < MIN_AUFNAHME_SEK:
@@ -666,8 +709,10 @@ class DiktierApp(rumps.App):
         self.tmp_pfad_ki = tmp.name
         tmp.close()
         befehl = [FFMPEG, "-f", "avfoundation", "-i", f":{finde_mikrofon_index(MIKROFON)}",
-                  "-ar", "16000", "-ac", "1", "-y", self.tmp_pfad_ki]
-        self.ffmpeg_prozess_ki = subprocess.Popen(befehl, stderr=subprocess.DEVNULL)
+                  "-ar", "16000", "-ac", "1", "-flush_packets", "1", "-avioflags", "direct",
+                  "-y", self.tmp_pfad_ki]
+        self.ffmpeg_prozess_ki = subprocess.Popen(befehl, stdin=subprocess.PIPE, stderr=(open("/tmp/diktieren-ffmpeg.log", "a") if DEBUG else subprocess.DEVNULL))
+        _debug_log("Aufnahme KI gestartet")
         self._warn_timer = threading.Timer(25.0, self._zeige_limit_warnung)
         self._warn_timer.start()
 
@@ -678,8 +723,7 @@ class DiktierApp(rumps.App):
         if hasattr(self, '_warn_timer'):
             self._warn_timer.cancel()
         if self.ffmpeg_prozess_ki:
-            self.ffmpeg_prozess_ki.terminate()
-            self.ffmpeg_prozess_ki.wait()
+            _beende_ffmpeg_sauber(self.ffmpeg_prozess_ki)
         if dauer < MIN_AUFNAHME_SEK:
             self.title = "🎤"
             try:
@@ -719,11 +763,17 @@ class DiktierApp(rumps.App):
             if full_prompt:
                 befehl += ["--prompt", full_prompt]
 
+            wav_size = os.path.getsize(self.tmp_pfad) if os.path.exists(self.tmp_pfad) else 0
+            _debug_log(f"Whisper start, WAV={wav_size} bytes, Modell={self.aktives_modell}")
+            _t0 = time.time()
             ergebnis = subprocess.run(
                 befehl,
                 capture_output=True,
                 text=True
             )
+            _debug_log(f"Whisper fertig in {time.time()-_t0:.1f}s, returncode={ergebnis.returncode}")
+            if ergebnis.stderr and DEBUG:
+                _debug_log(f"Whisper stderr: {ergebnis.stderr.strip()[:500]}")
 
             text = ergebnis.stdout.strip()
 
@@ -775,7 +825,13 @@ class DiktierApp(rumps.App):
                 "--no-speech-thold", "0.8",
                 "--file", self.tmp_pfad_ki,
             ]
+            wav_size_ki = os.path.getsize(self.tmp_pfad_ki) if os.path.exists(self.tmp_pfad_ki) else 0
+            _debug_log(f"Whisper-KI start, WAV={wav_size_ki} bytes")
+            _t0 = time.time()
             ergebnis = subprocess.run(befehl, capture_output=True, text=True)
+            _debug_log(f"Whisper-KI fertig in {time.time()-_t0:.1f}s, returncode={ergebnis.returncode}")
+            if ergebnis.stderr and DEBUG:
+                _debug_log(f"Whisper-KI stderr: {ergebnis.stderr.strip()[:500]}")
             sprachbefehl = ergebnis.stdout.strip()
 
             if not sprachbefehl:

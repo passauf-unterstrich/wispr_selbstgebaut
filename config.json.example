@@ -18,5 +18,8 @@
     "Amara.org",
     "Thanks for watching!",
     "Thank you."
-  ]
+  ],
+  "vad_chunk_ziel_sek": 20,
+  "vad_chunk_max_sek": 45,
+  "vad_min_pause_ms": 600
 }

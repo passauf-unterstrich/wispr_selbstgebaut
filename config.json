@@ -19,5 +19,8 @@
     "Thanks for watching!",
     "Thank you."
   ],
-  "debug": true
+  "debug": true,
+  "vad_chunk_ziel_sek": 15,
+  "vad_chunk_max_sek": 30,
+  "vad_min_pause_ms": 600
 }

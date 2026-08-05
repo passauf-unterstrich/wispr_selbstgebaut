@@ -8,6 +8,40 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ── Spinner für stille Downloads/Installations ──
+mit_spinner() {
+    # Nutzung: mit_spinner "Nachricht" befehl arg1 arg2 ...
+    local nachricht="$1"; shift
+    local log=$(mktemp)
+    "$@" > "$log" 2>&1 &
+    local pid=$!
+    local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    local i=0
+    local start=$(date +%s)
+    while kill -0 $pid 2>/dev/null; do
+        local elapsed=$(($(date +%s) - start))
+        local c=${chars:$((i % ${#chars})):1}
+        printf "\r  %s %s  (%ss)" "$c" "$nachricht" "$elapsed"
+        i=$((i+1))
+        sleep 0.1
+    done
+    wait $pid
+    local status=$?
+    local elapsed=$(($(date +%s) - start))
+    if [ $status -eq 0 ]; then
+        printf "\r  ✓ %s  (%ss)                    \n" "$nachricht" "$elapsed"
+    else
+        printf "\r  ✗ %s  (Fehler)                  \n" "$nachricht"
+        echo ""
+        echo "── Log ──"
+        cat "$log"
+        rm -f "$log"
+        exit 1
+    fi
+    rm -f "$log"
+}
+
+
 clear
 echo ""
 echo "🎤 Wispr Setup"
@@ -59,8 +93,7 @@ for pkg in whisper-cli ffmpeg ollama; do
     if brew list "$pkg" &>/dev/null; then
         echo "✓ $pkg ist installiert."
     else
-        echo "• Installiere $pkg..."
-        brew install "$pkg"
+        mit_spinner "Installiere $pkg via brew" brew install "$pkg"
     fi
 done
 echo ""
@@ -79,10 +112,9 @@ echo "(rumps, pynput, silero-vad, torch, ...)"
 echo ""
 read -p "Enter drücken..."
 
-pip3 install --break-system-packages --upgrade pip --quiet
-pip3 install --break-system-packages -r "$SCRIPT_DIR/requirements.txt"
-echo ""
-echo "✓ Python-Pakete installiert."
+mit_spinner "pip aktualisieren" pip3 install --break-system-packages --upgrade pip --quiet
+mit_spinner "Python-Pakete installieren (torch, rumps, silero-vad, ...)" \
+    pip3 install --break-system-packages --quiet -r "$SCRIPT_DIR/requirements.txt"
 read -p "Weiter mit Enter..."
 
 # ────────────────────────────────────────────────────────────

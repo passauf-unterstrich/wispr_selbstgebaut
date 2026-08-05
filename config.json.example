@@ -21,5 +21,8 @@
   ],
   "vad_chunk_ziel_sek": 20,
   "vad_chunk_max_sek": 45,
-  "vad_min_pause_ms": 600
+  "vad_min_pause_ms": 600,
+  "blink_ms": 500,
+  "toggle_taste": "alt_r",
+  "doppel_tap_ms": 400
 }

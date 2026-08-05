@@ -29,30 +29,49 @@ import urllib.request
 # ─────────────────────────────────────────
 # KONFIGURATION
 # ─────────────────────────────────────────
+from pathlib import Path
+import shutil
 
-# Verfügbare Modelle – hier neue einfach hinzufügen
+# Ordner in dem dieses Skript liegt – App-Dateien werden relativ dazu gefunden
+SCRIPT_DIR  = Path(__file__).resolve().parent
+MODELLE_DIR = SCRIPT_DIR / "modelle"
+
+# Verfügbare Whisper-Modelle
 MODELLE = {
-    "medium": "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/modelle/ggml-medium.bin",
-    "large-v3": "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/modelle/ggml-large-v3.bin",
+    "medium":   str(MODELLE_DIR / "ggml-medium.bin"),
+    "large-v3": str(MODELLE_DIR / "ggml-large-v3.bin"),
 }
-
-# Standardmodell beim Start
 AKTIVES_MODELL = "medium"
 
-WHISPER_CLI = "/opt/homebrew/bin/whisper-cli"
-LANGUAGE = "de"
-VOCABULARY_CSV = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/vocabulary.csv"
-FFMPEG = "/opt/homebrew/bin/ffmpeg"
-MIKROFON = "1" # MacBook Pro Microphone
-# [0] ZoomAudioDevice
-# [1] MacBook Pro Microphone  ← das wollen wir
-# [2] Microsoft Teams Audio
+# Externe Programme im PATH suchen (funktioniert egal wo Homebrew liegt)
+WHISPER_CLI = shutil.which("whisper-cli") or "/opt/homebrew/bin/whisper-cli"
+FFMPEG      = shutil.which("ffmpeg")      or "/opt/homebrew/bin/ffmpeg"
+
+LANGUAGE       = "de"
+VOCABULARY_CSV = str(SCRIPT_DIR / "vocabulary.csv")
+
+# Mikrofon: "default" = macOS System-Standard (später im Menü umstellbar)
+MIKROFON = "default"
+
+# ─────────────────────────────────────────
+# CONFIG-DATEI LADEN (überschreibt Defaults oben)
+# ─────────────────────────────────────────
+import json as _json
+_config_path = SCRIPT_DIR / "config.json"
+if _config_path.exists():
+    try:
+        _cfg = _json.loads(_config_path.read_text())
+        AKTIVES_MODELL = _cfg.get("aktives_modell", AKTIVES_MODELL)
+        LANGUAGE       = _cfg.get("sprache",        LANGUAGE)
+        MIKROFON       = _cfg.get("mikrofon",       MIKROFON)
+    except Exception as _e:
+        print(f"⚠️  config.json konnte nicht gelesen werden: {_e}")
 
 # ─────────────────────────────────────────
 # KONFIGURATION – KI-ASSISTENT
 # ─────────────────────────────────────────
 
-ASSISTANT_STYLE_FILE = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/assistant_style.md"
+ASSISTANT_STYLE_FILE = str(SCRIPT_DIR / "assistant_style.md")
 
 # Ollama (lokal) – ollama pull llama3.1:8b
 OLLAMA_URL    = "http://localhost:11434/api/chat"
@@ -64,6 +83,60 @@ CLAUDE_MODELL     = "claude-haiku-4-5-20251001"
 
 KI_MODI          = ["Lokal (Ollama)", "Claude API"]
 AKTIVER_KI_MODUS = "Lokal (Ollama)"
+
+# KI-Modelle aus config.json (falls vorhanden)
+if _config_path.exists():
+    try:
+        _cfg2 = _json.loads(_config_path.read_text())
+        OLLAMA_MODELL = _cfg2.get("ollama_modell", OLLAMA_MODELL)
+        CLAUDE_MODELL = _cfg2.get("claude_modell", CLAUDE_MODELL)
+        AKTIVER_KI_MODUS = _cfg2.get("aktiver_ki_modus", AKTIVER_KI_MODUS)
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────
+# MIKROFON-ERKENNUNG
+# ─────────────────────────────────────────
+def liste_mikrofone():
+    """Fragt ffmpeg nach allen verfügbaren Audio-Eingaben.
+    Rückgabe: Liste von (index, name)-Tupeln."""
+    import subprocess as _sp
+    try:
+        r = _sp.run(
+            [FFMPEG, "-f", "avfoundation", "-list_devices", "true", "-i", ""],
+            capture_output=True, text=True, timeout=5,
+        )
+        ausgabe = r.stderr  # ffmpeg schreibt Geräteliste auf stderr
+    except Exception:
+        return []
+    mikros = []
+    in_audio_block = False
+    for zeile in ausgabe.splitlines():
+        if "AVFoundation audio devices" in zeile:
+            in_audio_block = True
+            continue
+        if in_audio_block:
+            m = re.search(r"\[(\d+)\]\s+(.+)$", zeile)
+            if m:
+                mikros.append((m.group(1), m.group(2).strip()))
+            elif "AVFoundation" in zeile:
+                break  # nächster Block startet
+    return mikros
+
+def finde_mikrofon_index(gewuenschter_name):
+    """Sucht Index zu einem Mikrofon-Namen. 'default' → macOS-Standard.
+    Fällt zurück auf ersten gefundenen Eingang, falls Name nicht da ist."""
+    if gewuenschter_name == "default":
+        return "default"
+    mikros = liste_mikrofone()
+    for idx, name in mikros:
+        if gewuenschter_name.lower() in name.lower():
+            return idx
+    # Fallback: ersten Eingang nehmen
+    if mikros:
+        return mikros[0][0]
+    return "default"
 
 # ─────────────────────────────────────────
 # SHORTCUT KONFIGURATION
@@ -155,13 +228,27 @@ def berechne_audio_energie(pfad):
 
 
 def fuege_text_ein(text):
+    """Fügt Text ein und stellt die alte Zwischenablage danach wieder her."""
     if not text or not text.strip():
         return
+    # Alte Zwischenablage merken
+    try:
+        alte_zwischenablage = pyperclip.paste()
+    except Exception:
+        alte_zwischenablage = None
+    # Diktat in Zwischenablage → Cmd+V
     pyperclip.copy(text + " ")
     time.sleep(0.1)
     with _kb.pressed(keyboard.Key.cmd):
         _kb.press('v')
         _kb.release('v')
+    # Kurz warten bis Cmd+V durch ist, dann Original zurückschreiben
+    time.sleep(0.25)
+    if alte_zwischenablage is not None:
+        try:
+            pyperclip.copy(alte_zwischenablage)
+        except Exception:
+            pass
 
 # ─────────────────────────────────────────
 # KI-ANFRAGEN
@@ -230,11 +317,26 @@ class DiktierApp(rumps.App):
                 item.state = True
             ki_modus_menu.add(item)
 
+        # Mikrofon-Untermenü aufbauen
+        mikrofon_menu = rumps.MenuItem("Mikrofon")
+        gefundene = liste_mikrofone()
+        # "Standard" (macOS-Default) immer als erste Option
+        item_default = rumps.MenuItem("Standard (macOS)", callback=self.wechsle_mikrofon)
+        if MIKROFON == "default":
+            item_default.state = True
+        mikrofon_menu.add(item_default)
+        for _idx, _name in gefundene:
+            item = rumps.MenuItem(_name, callback=self.wechsle_mikrofon)
+            if MIKROFON != "default" and MIKROFON.lower() in _name.lower():
+                item.state = True
+            mikrofon_menu.add(item)
+
         self.menu = [
             rumps.MenuItem(f"Diktat: {shortcut_als_text(SHORTCUT)}  |  KI: {shortcut_als_text(SHORTCUT_KI)}"),
             rumps.separator,
             modell_menu,
             ki_modus_menu,
+            mikrofon_menu,
             rumps.MenuItem("Kleinschreibung", callback=self.wechsle_kleinschreibung),
         ]
 
@@ -255,7 +357,7 @@ class DiktierApp(rumps.App):
         self.ki_kontext        = ""
 
         #Kleinschreibung State
-        self.kleinschreibung_aktiv = False
+        self.kleinschreibung_aktiv = bool(_json.loads((SCRIPT_DIR/"config.json").read_text()).get("kleinschreibung_default", False)) if (SCRIPT_DIR/"config.json").exists() else False
 
         self.session_replacements = {}
         self.session_prompt_words = []
@@ -410,6 +512,26 @@ class DiktierApp(rumps.App):
         status = "an" if self.kleinschreibung_aktiv else "aus"
         rumps.notification("Kleinschreibung", "", f"Kleinschreibung {status}")
 
+    def wechsle_mikrofon(self, sender):
+        global MIKROFON
+        # Alte Häkchen entfernen
+        for item in self.menu["Mikrofon"].values():
+            item.state = False
+        sender.state = True
+        # Wert bestimmen: "default" oder Gerätename
+        MIKROFON = "default" if sender.title == "Standard (macOS)" else sender.title
+        # In config.json speichern
+        import json as _j
+        cfg_path = SCRIPT_DIR / "config.json"
+        try:
+            cfg = _j.loads(cfg_path.read_text()) if cfg_path.exists() else {}
+            cfg["mikrofon"] = MIKROFON
+            cfg_path.write_text(_j.dumps(cfg, indent=2, ensure_ascii=False))
+        except Exception as e:
+            rumps.notification("Fehler", "Config speichern", str(e))
+            return
+        rumps.notification("Mikrofon gewechselt", "", MIKROFON)
+
 # ─────────────────────────────────────────
 # TASTATUR LISTENER
 # ─────────────────────────────────────────
@@ -478,7 +600,7 @@ class DiktierApp(rumps.App):
         befehl = [
             FFMPEG,
             "-f", "avfoundation",
-            "-i", f":{MIKROFON}",
+            "-i", f":{finde_mikrofon_index(MIKROFON)}",
             "-ar", "16000",
             "-ac", "1",
             "-y",
@@ -527,7 +649,7 @@ class DiktierApp(rumps.App):
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         self.tmp_pfad_ki = tmp.name
         tmp.close()
-        befehl = [FFMPEG, "-f", "avfoundation", "-i", f":{MIKROFON}",
+        befehl = [FFMPEG, "-f", "avfoundation", "-i", f":{finde_mikrofon_index(MIKROFON)}",
                   "-ar", "16000", "-ac", "1", "-y", self.tmp_pfad_ki]
         self.ffmpeg_prozess_ki = subprocess.Popen(befehl, stderr=subprocess.DEVNULL)
         self._warn_timer = threading.Timer(25.0, self._zeige_limit_warnung)

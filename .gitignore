@@ -13,3 +13,14 @@ __pycache__/
 
 assistant_style.md
 vocabulary.csv
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# macOS
+.DS_Store
+
+# Persönliche Konfiguration (pro Nutzer)
+config.json

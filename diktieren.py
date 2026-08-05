@@ -839,6 +839,11 @@ class DiktierApp(rumps.App):
             self._cutter_stop = threading.Event()
             self._cutter_thread = threading.Thread(target=self._vad_cutter, daemon=True)
             self._cutter_thread.start()
+        # 45s-Warnung nur im klassischen Modus (Live-Chunking braucht sie nicht)
+        if CHUNKING_MODUS == "klassisch":
+            self._warn_timer = threading.Timer(45.0, self._zeige_limit_warnung)
+            self._warn_timer.daemon = True
+            self._warn_timer.start()
 
     def _zeige_limit_warnung(self):
             if self.aufnahme_aktiv or self.ki_aufnahme_aktiv:
@@ -1147,6 +1152,11 @@ class DiktierApp(rumps.App):
             self._cutter_stop = threading.Event()
             self._cutter_thread = threading.Thread(target=self._vad_cutter, daemon=True)
             self._cutter_thread.start()
+        # 45s-Warnung nur im klassischen Modus (Live-Chunking braucht sie nicht)
+        if CHUNKING_MODUS == "klassisch":
+            self._warn_timer = threading.Timer(45.0, self._zeige_limit_warnung)
+            self._warn_timer.daemon = True
+            self._warn_timer.start()
 
         # Blink-Thread starten
         self._blink_stop = threading.Event()

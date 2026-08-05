@@ -60,6 +60,7 @@ VAD_MIN_PAUSE_MS = 600
 TOGGLE_TASTE_NAME = "alt_r"
 DOPPEL_TAP_MS = 400
 BLINK_MS = 500
+CHUNKING_MODUS = "live"  # "live" oder "klassisch"
 
 # ─────────────────────────────────────────
 # CONFIG-DATEI LADEN (überschreibt Defaults oben)
@@ -80,6 +81,7 @@ if _config_path.exists():
         TOGGLE_TASTE_NAME  = _cfg.get("toggle_taste", "alt_r")
         DOPPEL_TAP_MS      = int(_cfg.get("doppel_tap_ms", 400))
         BLINK_MS           = int(_cfg.get("blink_ms", 500))
+        CHUNKING_MODUS     = _cfg.get("chunking_modus", "live")
     except Exception as _e:
         print(f"⚠️  config.json konnte nicht gelesen werden: {_e}")
 
@@ -299,6 +301,14 @@ def fuege_text_ein(text):
     """Fügt Text ein und stellt die alte Zwischenablage danach wieder her."""
     if not text or not text.strip():
         return
+    # Historie-Aufnahme
+    try:
+        _historie_hinzufuegen(text.strip(), DIKTIER_HISTORIE)
+        _speichere_historie()
+        if _app_instanz is not None:
+            _app_instanz._aktualisiere_diktier_menu()
+    except Exception as e:
+        _debug_log(f"Historie-Aufnahme fehlgeschlagen: {e}")
     # Alte Zwischenablage merken
     try:
         alte_zwischenablage = pyperclip.paste()
@@ -385,6 +395,60 @@ def frage_claude(befehl: str, style_prompt: str) -> str:
 # MENU BAR APP
 # ─────────────────────────────────────────
 
+
+# ─── Historie (Diktate + Clipboard) ───────────────────────────────
+try:
+    HISTORIE_MAX = int(_json.loads(_config_path.read_text()).get("historie_max", 20))
+except Exception:
+    HISTORIE_MAX = 20
+HISTORIE_DATEI = SCRIPT_DIR / ".historie.json"
+DIKTIER_HISTORIE = []
+CLIPBOARD_HISTORIE = []
+_app_instanz = None
+_letzter_eigener_copy = ""
+
+def _lade_historie():
+    global DIKTIER_HISTORIE, CLIPBOARD_HISTORIE
+    if HISTORIE_DATEI.exists():
+        try:
+            d = json.loads(HISTORIE_DATEI.read_text())
+            DIKTIER_HISTORIE = d.get("diktate", [])[:HISTORIE_MAX]
+            CLIPBOARD_HISTORIE = d.get("clipboard", [])[:HISTORIE_MAX]
+        except Exception as e:
+            _debug_log(f"Historie-Laden fehlgeschlagen: {e}")
+
+def _speichere_historie():
+    try:
+        HISTORIE_DATEI.write_text(json.dumps({
+            "diktate": DIKTIER_HISTORIE,
+            "clipboard": CLIPBOARD_HISTORIE,
+        }, ensure_ascii=False, indent=2))
+    except Exception as e:
+        _debug_log(f"Historie-Speichern fehlgeschlagen: {e}")
+
+def _historie_hinzufuegen(text, liste):
+    if not text or not text.strip():
+        return
+    text = text.strip()
+    # Zu große Einträge (>50 KB) nicht speichern – nur ins Menü käme das trotzdem
+    # nicht sinnvoll rein und die .historie.json würde aufblähen
+    if len(text) > 5_000_000:  # 5 MB pro Eintrag – erst bei absurd großen Blöcken abbrechen
+        return
+    if text in liste:
+        liste.remove(text)
+    liste.insert(0, text)
+    del liste[HISTORIE_MAX:]
+
+def _historie_kuerzen(text, laenge=60):
+    t = text.replace("\n", " ").replace("\r", " ").strip()
+    t = " ".join(t.split())
+    if len(t) > laenge:
+        t = t[:laenge] + "…"
+    return t
+
+_lade_historie()
+# ──────────────────────────────────────────────────────────────────
+
 class DiktierApp(rumps.App):
     def __init__(self):
         super().__init__("🎤", quit_button="Beenden")
@@ -459,6 +523,28 @@ class DiktierApp(rumps.App):
 
         threading.Thread(target=self.starte_keyboard_listener, daemon=True).start()
         threading.Thread(target=self.lade_alles, daemon=True).start()
+
+        # Chunking-Modus
+        self._chunking_modus_item = rumps.MenuItem(
+            f"Modus: {'Live-Chunking' if CHUNKING_MODUS == 'live' else 'Klassisch (am Ende)'}",
+            callback=self.wechsle_chunking_modus,
+        )
+        try:
+            self.menu.add(self._chunking_modus_item)
+        except Exception as e:
+            _debug_log(f"Modus-Menü-Anhängen fehlgeschlagen: {e}")
+
+        # Historie-Untermenüs
+        global _app_instanz
+        _app_instanz = self
+        self._baue_historie_menues()
+        threading.Thread(target=self._clipboard_poller, daemon=True).start()
+        try:
+            self.menu.add(rumps.separator)
+            self.menu.add(self._diktier_submenu)
+            self.menu.add(self._clipboard_submenu)
+        except Exception as e:
+            _debug_log(f"Historie-Menü-Anhängen fehlgeschlagen: {e}")
 
     def lade_alles(self):
         self.replacements   = lade_vocabulary(VOCABULARY_CSV)
@@ -598,6 +684,23 @@ class DiktierApp(rumps.App):
         self.menu["KI-Modus"][self.aktiver_ki_modus].state = True
         rumps.notification("KI-Modus", "", f"Aktiv: {self.aktiver_ki_modus}")
 
+    def wechsle_chunking_modus(self, sender):
+        global CHUNKING_MODUS
+        CHUNKING_MODUS = "klassisch" if CHUNKING_MODUS == "live" else "live"
+        # Config speichern
+        try:
+            cfg = json.loads((SCRIPT_DIR / "config.json").read_text())
+            cfg["chunking_modus"] = CHUNKING_MODUS
+            (SCRIPT_DIR / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+        except Exception as e:
+            _debug_log(f"Modus-Speichern fehlgeschlagen: {e}")
+        # Menü-Label updaten
+        if hasattr(self, "_chunking_modus_item"):
+            self._chunking_modus_item.title = f"Modus: {'Live-Chunking' if CHUNKING_MODUS == 'live' else 'Klassisch (am Ende)'}"
+        rumps.notification("Chunking-Modus geändert",
+                           "",
+                           "Live-Chunking aktiv" if CHUNKING_MODUS == "live" else "Klassisch: Text kommt komplett am Ende")
+
     def wechsle_kleinschreibung(self, sender):
         self.kleinschreibung_aktiv = not self.kleinschreibung_aktiv
         sender.state = self.kleinschreibung_aktiv
@@ -732,7 +835,7 @@ class DiktierApp(rumps.App):
         _debug_log(f"Aufnahme Diktat gestartet, VAD={_vad_verfuegbar}")
 
         # VAD-Cutter-Thread starten (nur wenn VAD verfügbar)
-        if _vad_verfuegbar:
+        if _vad_verfuegbar and CHUNKING_MODUS == "live":
             self._cutter_stop = threading.Event()
             self._cutter_thread = threading.Thread(target=self._vad_cutter, daemon=True)
             self._cutter_thread.start()
@@ -1040,7 +1143,7 @@ class DiktierApp(rumps.App):
         )
         _debug_log(f"Toggle-Aufnahme gestartet, VAD={_vad_verfuegbar}")
 
-        if _vad_verfuegbar:
+        if _vad_verfuegbar and CHUNKING_MODUS == "live":
             self._cutter_stop = threading.Event()
             self._cutter_thread = threading.Thread(target=self._vad_cutter, daemon=True)
             self._cutter_thread.start()
@@ -1102,7 +1205,10 @@ class DiktierApp(rumps.App):
                 start_sample = offset
                 end_sample   = offset + schnitt_sample
                 ausschnitt = audio_np[start_sample:end_sample]
-                self.schnitt_offset_sample = end_sample
+                # Overlap: nächster Chunk beginnt 400ms VOR dem Schnitt,
+                # damit leise Randwörter nicht in die Ritze fallen
+                overlap = int(0.4 * 16000)
+                self.schnitt_offset_sample = max(0, end_sample - overlap)
                 threading.Thread(
                     target=self._transkribiere_ausschnitt,
                     args=(ausschnitt, sr),
@@ -1132,7 +1238,7 @@ class DiktierApp(rumps.App):
         for seg in reversed(segmente):
             ende = seg["end"]
             if ziel_sample <= ende <= max_sample:
-                schnitt = ende + int(0.3 * SAMPLE_RATE)
+                schnitt = ende + int(0.8 * SAMPLE_RATE)  # großzügig damit leise Satzenden mitkommen
                 schnitt = min(schnitt, len(audio_np))
                 _debug_log(f"VAD-Schnitt bei {schnitt/SAMPLE_RATE:.1f}s")
                 return schnitt
@@ -1214,6 +1320,82 @@ class DiktierApp(rumps.App):
         except Exception as e:
             _debug_log(f"Whisper-Fehler: {e}")
 
+
+    def _baue_historie_menues(self):
+        self._diktier_submenu = rumps.MenuItem("📝 Letzte Diktate")
+        self._clipboard_submenu = rumps.MenuItem("📋 Zwischenablage")
+        self._aktualisiere_diktier_menu()
+        self._aktualisiere_clipboard_menu()
+
+    def _aktualisiere_diktier_menu(self):
+        if not hasattr(self, "_diktier_submenu"):
+            return
+        try: self._diktier_submenu.clear()
+        except (AttributeError, KeyError): pass
+        if not DIKTIER_HISTORIE:
+            self._diktier_submenu.add(rumps.MenuItem("(noch leer)", callback=None))
+        else:
+            for eintrag in DIKTIER_HISTORIE:
+                label = _historie_kuerzen(eintrag)
+                item = rumps.MenuItem(label, callback=self._make_historie_callback(eintrag))
+                self._diktier_submenu.add(item)
+            self._diktier_submenu.add(rumps.separator)
+            self._diktier_submenu.add(rumps.MenuItem("🗑 Historie leeren", callback=self._leere_diktier_historie))
+
+    def _aktualisiere_clipboard_menu(self):
+        if not hasattr(self, "_clipboard_submenu"):
+            return
+        try: self._clipboard_submenu.clear()
+        except (AttributeError, KeyError): pass
+        if not CLIPBOARD_HISTORIE:
+            self._clipboard_submenu.add(rumps.MenuItem("(noch leer)", callback=None))
+        else:
+            for eintrag in CLIPBOARD_HISTORIE:
+                label = _historie_kuerzen(eintrag)
+                item = rumps.MenuItem(label, callback=self._make_historie_callback(eintrag))
+                self._clipboard_submenu.add(item)
+            self._clipboard_submenu.add(rumps.separator)
+            self._clipboard_submenu.add(rumps.MenuItem("🗑 Historie leeren", callback=self._leere_clipboard_historie))
+
+    def _make_historie_callback(self, text):
+        def _cb(sender):
+            fuege_text_ein(text)
+        return _cb
+
+    def _clipboard_poller(self):
+        """Beobachtet die System-Zwischenablage und ergänzt die Historie."""
+        letzter = ""
+        try: letzter = pyperclip.paste() or ""
+        except: pass
+        while True:
+            time.sleep(1.0)
+            try:
+                aktuell = pyperclip.paste() or ""
+            except Exception:
+                continue
+            if not aktuell or aktuell == letzter:
+                continue
+            letzter = aktuell
+            if aktuell == _letzter_eigener_copy:
+                continue
+            if DIKTIER_HISTORIE and aktuell.strip() == DIKTIER_HISTORIE[0]:
+                continue
+            _historie_hinzufuegen(aktuell, CLIPBOARD_HISTORIE)
+            _speichere_historie()
+            try:
+                self._aktualisiere_clipboard_menu()
+            except Exception as e:
+                _debug_log(f"Clipboard-Menu-Update-Fehler: {e}")
+
+    def _leere_diktier_historie(self, sender):
+        DIKTIER_HISTORIE.clear()
+        _speichere_historie()
+        self._aktualisiere_diktier_menu()
+
+    def _leere_clipboard_historie(self, sender):
+        CLIPBOARD_HISTORIE.clear()
+        _speichere_historie()
+        self._aktualisiere_clipboard_menu()
 
 if __name__ == "__main__":
     app = DiktierApp()

@@ -40,5 +40,9 @@
   "vad_min_pause_ms": 600,
   "blink_ms": 500,
   "toggle_taste": "alt_r",
-  "doppel_tap_ms": 400
+  "doppel_tap_ms": 400,
+  "historie_max": 20,
+  "historie_aktiv": true,
+  "clipboard_historie_aktiv": true,
+  "chunking_modus": "live"
 }

@@ -1,166 +1,198 @@
 #!/bin/bash
 # ─────────────────────────────────────────
-# Setup – Diktierfunktion + KI-Assistent
+# Wispr Setup – installiert alles was für die App gebraucht wird
+# Läuft geführt Schritt für Schritt, prüft was schon da ist,
+# lädt nur das Fehlende nach.
 # ─────────────────────────────────────────
 
+set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 clear
 echo ""
-echo "🎤 Willkommen beim Setup der Diktierfunktion"
-echo "════════════════════════════════════════════"
+echo "🎤 Wispr Setup"
+echo "══════════════"
 echo ""
-echo "Dieses Script führt dich Schritt für Schritt"
-echo "durch die Installation. Du wirst immer gefragt"
-echo "bevor etwas passiert."
+echo "Dieses Skript prüft was schon installiert ist"
+echo "und richtet nur das Fehlende ein."
 echo ""
-read -p "Bereit? Drücke Enter um zu starten..."
+echo "Geschätzte Dauer bei jungfräulichem Mac: 20–30 Minuten"
+echo "(davon ~15 Min Downloads: Whisper-Modell + KI-Modell)"
+echo ""
+read -p "Enter drücken um zu starten..."
 
 # ────────────────────────────────────────────────────────────
 # SCHRITT 1: Homebrew
 # ────────────────────────────────────────────────────────────
 clear
 echo ""
-echo "Schritt 1 von 5 – Homebrew"
+echo "Schritt 1 von 7 – Homebrew"
 echo "──────────────────────────"
-echo ""
-echo "Was ist Homebrew?"
-echo "Homebrew ist ein Programm das andere Programme installiert."
-echo "Es ist der einfachste Weg, Tools wie whisper-cli auf dem"
-echo "Mac zu installieren. Vergleichbar mit dem App Store –"
-echo "nur für Terminal-Programme."
-echo ""
 
 if command -v brew &>/dev/null; then
-    echo "✓ Homebrew ist bereits installiert – kein Download nötig."
+    echo "✓ Homebrew ist installiert."
 else
-    echo "⚠️  Homebrew ist noch nicht installiert."
     echo ""
-    echo "Was jetzt passiert:"
-    echo "→ Homebrew wird von der offiziellen Website geladen"
-    echo "→ Apple's Entwickler-Tools werden mitinstalliert"
-    echo "→ Das kann 5–15 Minuten dauern"
+    echo "Homebrew fehlt. Es ist der App Store für Terminal-Programme."
+    echo "Wir brauchen es zum Installieren von whisper-cli, ffmpeg, ollama."
     echo ""
     read -p "Enter drücken um Homebrew zu installieren..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    echo ""
+    # Homebrew-PATH aktivieren
+    if [ -f /opt/homebrew/bin/brew ]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    fi
     echo "✓ Homebrew installiert."
 fi
-
+echo ""
 read -p "Weiter mit Enter..."
 
 # ────────────────────────────────────────────────────────────
-# SCHRITT 2: Programme installieren
+# SCHRITT 2: Programme
 # ────────────────────────────────────────────────────────────
 clear
 echo ""
-echo "Schritt 2 von 5 – Programme installieren"
-echo "─────────────────────────────────────────"
-echo ""
-echo "Drei Programme werden installiert:"
-echo ""
-echo "  whisper-cli  →  wandelt deine Sprache in Text um (lokal, kein Internet nötig)"
-echo "  ffmpeg       →  nimmt den Ton vom Mikrofon auf"
-echo "  ollama       →  führt das KI-Modell lokal auf deinem Mac aus"
-echo ""
-echo "Download-Größe: ca. 200–400 MB"
-echo ""
-read -p "Enter drücken um die Programme zu installieren..."
-echo ""
+echo "Schritt 2 von 7 – Programme (whisper-cli, ffmpeg, ollama)"
+echo "──────────────────────────────────────────────────────────"
 
-brew install whisper-cli ffmpeg ollama
-
+for pkg in whisper-cli ffmpeg ollama; do
+    if brew list "$pkg" &>/dev/null; then
+        echo "✓ $pkg ist installiert."
+    else
+        echo "• Installiere $pkg..."
+        brew install "$pkg"
+    fi
+done
 echo ""
-echo "✓ Alle Programme installiert."
 read -p "Weiter mit Enter..."
 
 # ────────────────────────────────────────────────────────────
-# SCHRITT 3: Python-Umgebung
+# SCHRITT 3: Python-Pakete
 # ────────────────────────────────────────────────────────────
 clear
 echo ""
-echo "Schritt 3 von 5 – Python-Umgebung einrichten"
+echo "Schritt 3 von 7 – Python-Pakete"
+echo "────────────────────────────────"
+echo ""
+echo "Installiert die Python-Bibliotheken aus requirements.txt"
+echo "(rumps, pynput, silero-vad, torch, ...)"
+echo ""
+read -p "Enter drücken..."
+
+pip3 install --break-system-packages --upgrade pip --quiet
+pip3 install --break-system-packages -r "$SCRIPT_DIR/requirements.txt"
+echo ""
+echo "✓ Python-Pakete installiert."
+read -p "Weiter mit Enter..."
+
+# ────────────────────────────────────────────────────────────
+# SCHRITT 4: Whisper-Modell (medium)
+# ────────────────────────────────────────────────────────────
+clear
+echo ""
+echo "Schritt 4 von 7 – Whisper-Modell (medium, ~1.5 GB)"
+echo "──────────────────────────────────────────────────"
+
+MODELL_DIR="$SCRIPT_DIR/modelle"
+MEDIUM="$MODELL_DIR/ggml-medium.bin"
+mkdir -p "$MODELL_DIR"
+
+if [ -f "$MEDIUM" ]; then
+    echo "✓ Whisper-medium schon da."
+else
+    echo ""
+    echo "Whisper wandelt deine Sprache in Text um – komplett auf deinem Mac."
+    echo "Download ~1.5 GB, dauert je nach Internet 3–10 Minuten."
+    echo ""
+    read -p "Enter drücken um Download zu starten..."
+    curl -L --progress-bar \
+      -o "$MEDIUM" \
+      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin"
+    echo "✓ Whisper-medium geladen."
+fi
+echo ""
+read -p "Weiter mit Enter..."
+
+# ────────────────────────────────────────────────────────────
+# SCHRITT 5: Ollama starten + Modell laden
+# ────────────────────────────────────────────────────────────
+clear
+echo ""
+echo "Schritt 5 von 7 – KI-Modell (Ollama llama3.1:8b, ~5 GB)"
+echo "───────────────────────────────────────────────────────"
+
+# Ollama-Dienst starten
+brew services start ollama &>/dev/null || true
+sleep 2
+
+if ollama list 2>/dev/null | grep -q "llama3.1:8b"; then
+    echo "✓ llama3.1:8b schon geladen."
+else
+    echo ""
+    echo "llama3.1:8b ist das KI-Modell für den Sprach-Assistenten (ctrl_l-Shortcut)."
+    echo "Läuft komplett lokal, ohne Internet."
+    echo "Download ~5 GB, dauert je nach Internet 5–15 Minuten."
+    echo ""
+    read -p "Enter drücken um Download zu starten..."
+    ollama pull llama3.1:8b
+    echo "✓ llama3.1:8b geladen."
+fi
+echo ""
+read -p "Weiter mit Enter..."
+
+# ────────────────────────────────────────────────────────────
+# SCHRITT 6: Config-Dateien anlegen
+# ────────────────────────────────────────────────────────────
+clear
+echo ""
+echo "Schritt 6 von 7 – Persönliche Config-Dateien"
 echo "─────────────────────────────────────────────"
-echo ""
-echo "Was ist eine Python-Umgebung (venv)?"
-echo "Die App ist in Python geschrieben und braucht einige"
-echo "Zusatz-Bibliotheken. Eine venv ist ein isolierter Ordner"
-echo "nur für diese App – so kommt nichts mit dem Rest des"
-echo "Computers durcheinander."
-echo ""
-echo "Was jetzt passiert:"
-echo "→ Ein Ordner 'venv' wird im App-Ordner erstellt"
-echo "→ Benötigte Bibliotheken werden dort installiert"
-echo "→ Dauert ca. 1–2 Minuten"
-echo ""
-read -p "Enter drücken um fortzufahren..."
-echo ""
 
-python3 -m venv "$SCRIPT_DIR/venv"
-"$SCRIPT_DIR/venv/bin/pip" install --upgrade pip --quiet
-"$SCRIPT_DIR/venv/bin/pip" install rumps pyperclip requests pynput anthropic --quiet
-
+for f in config.json assistant_style.md vocabulary.csv; do
+    if [ -f "$SCRIPT_DIR/$f" ]; then
+        echo "✓ $f existiert schon (nicht überschrieben)."
+    elif [ -f "$SCRIPT_DIR/$f.example" ]; then
+        cp "$SCRIPT_DIR/$f.example" "$SCRIPT_DIR/$f"
+        echo "✓ $f aus Vorlage angelegt."
+    else
+        # vocabulary.csv hat keine .example – leer anlegen
+        if [ "$f" = "vocabulary.csv" ]; then
+            echo "word,replacement" > "$SCRIPT_DIR/$f"
+            echo "✓ $f leer angelegt."
+        fi
+    fi
+done
 echo ""
-echo "✓ Python-Umgebung eingerichtet."
 read -p "Weiter mit Enter..."
 
 # ────────────────────────────────────────────────────────────
-# SCHRITT 4: Ollama starten
+# SCHRITT 7: Terminal-Kurzbefehle
 # ────────────────────────────────────────────────────────────
 clear
 echo ""
-echo "Schritt 4 von 5 – KI-Dienst einrichten"
+echo "Schritt 7 von 7 – Terminal-Kurzbefehle"
 echo "───────────────────────────────────────"
 echo ""
-echo "Was ist Ollama?"
-echo "Ollama ist ein Dienst der das KI-Modell auf deinem Mac"
-echo "ausführt – komplett lokal, ohne Internet, ohne dass"
-echo "deine Daten irgendwo hingeschickt werden."
+echo "Ab jetzt kannst du im Terminal tippen:"
 echo ""
-echo "Was jetzt passiert:"
-echo "→ Ollama wird als Hintergrunddienst eingerichtet"
-echo "→ Er startet automatisch bei jedem Mac-Start"
-echo "→ Das KI-Modell (~5 GB) wird beim ersten App-Start"
-echo "  automatisch heruntergeladen"
-echo ""
-read -p "Enter drücken um fortzufahren..."
+echo "  diktieren         → startet die App"
+echo "  diktieren-update  → aktualisiert auf neueste Version"
 echo ""
 
-brew services start ollama
+ALIAS_START="alias diktieren=\"cd '$SCRIPT_DIR' && python3 diktieren.py\""
+ALIAS_UPDATE="alias diktieren-update=\"bash '$SCRIPT_DIR/update.sh'\""
 
-echo ""
-echo "✓ Ollama-Dienst eingerichtet."
-read -p "Weiter mit Enter..."
-
-# ────────────────────────────────────────────────────────────
-# SCHRITT 5: Startbefehl einrichten
-# ────────────────────────────────────────────────────────────
-clear
-echo ""
-echo "Schritt 5 von 5 – Startbefehl einrichten"
-echo "─────────────────────────────────────────"
-echo ""
-echo "Damit du die App immer einfach starten kannst,"
-echo "wird ein Kurzbefehl eingerichtet."
-echo ""
-echo "Ab jetzt reicht im Terminal:"
-echo ""
-echo "  diktieren"
-echo ""
-echo "Das funktioniert egal in welchem Ordner du bist."
-echo ""
-read -p "Enter drücken um fortzufahren..."
-
-ALIAS_LINE="alias diktieren=\"cd '$SCRIPT_DIR' && '$SCRIPT_DIR/venv/bin/python3' diktieren.py\""
-
-if grep -q "alias diktieren=" ~/.zshrc 2>/dev/null; then
-    echo ""
-    echo "✓ Startbefehl bereits vorhanden."
-else
-    echo "$ALIAS_LINE" >> ~/.zshrc
-    echo ""
-    echo "✓ Startbefehl eingerichtet."
+# Alte Einträge entfernen (falls Setup schon mal lief)
+if [ -f ~/.zshrc ]; then
+    sed -i.bak '/alias diktieren=/d; /alias diktieren-update=/d' ~/.zshrc
+    rm -f ~/.zshrc.bak
 fi
+
+echo "$ALIAS_START"  >> ~/.zshrc
+echo "$ALIAS_UPDATE" >> ~/.zshrc
+echo "✓ Kurzbefehle in ~/.zshrc eingetragen."
+echo ""
+read -p "Weiter mit Enter..."
 
 # ────────────────────────────────────────────────────────────
 # FERTIG
@@ -177,15 +209,14 @@ echo ""
 echo "  Systemeinstellungen"
 echo "  → Datenschutz & Sicherheit"
 echo "  → Barrierefreiheit"
-echo "  → Terminal hinzufügen ✓"
+echo "  → Terminal hinzufügen (Häkchen setzen)"
 echo ""
 echo "─────────────────────────────────────"
 echo "So startest du die App:"
 echo ""
-echo "  1. Dieses Terminal-Fenster schließen"
+echo "  1. Terminal-Fenster schließen"
 echo "  2. Neues Terminal-Fenster öffnen"
-echo "  3. Eingeben:  diktieren"
+echo "  3. Tippe:  diktieren"
 echo ""
-echo "Beim ersten Start werden automatisch die Sprachmodelle"
-echo "heruntergeladen (~6 GB). Das dauert einige Minuten."
+echo "Bei Fragen: passauf-unterstrich auf GitHub"
 echo ""

@@ -1,0 +1,9 @@
+rumps
+pyperclip
+requests
+pynput
+anthropic
+silero-vad
+soundfile
+torch
+numpy

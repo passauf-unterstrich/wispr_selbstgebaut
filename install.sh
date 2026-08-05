@@ -54,6 +54,22 @@ else
     git clone "$REPO_URL" "$APP_DIR"
 fi
 
-# ── setup.sh starten ──
+# ── setup.sh in neuem Terminal-Fenster starten ──
+# Der Weg über curl|bash blockiert stdin – deshalb öffnen wir ein frisches
+# Terminal-Fenster in dem setup.sh interaktiv laufen kann.
 cd "$APP_DIR"
-bash setup.sh
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Wispr wurde heruntergeladen."
+echo "  Setup startet in einem neuen Terminal-Fenster..."
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
+osascript <<APPLESCRIPT
+tell application "Terminal"
+    activate
+    do script "cd \"$APP_DIR\" && bash setup.sh"
+end tell
+APPLESCRIPT
+
+echo "✓ Setup läuft im neuen Terminal-Fenster. Dieses Fenster kann geschlossen werden."

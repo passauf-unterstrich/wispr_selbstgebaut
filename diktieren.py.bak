@@ -830,26 +830,6 @@ class DiktierApp(rumps.App):
                         except: pass
                         self.title = "🎤"
                         return
-                    # VAD-Vorprüfung auch für den Rest
-                    if _vad_verfuegbar:
-                        try:
-                            rest_torch = _torch.from_numpy(rest)
-                            rest_segmente = _vad_stamps(
-                                rest_torch, _vad_modell,
-                                sampling_rate=sr,
-                                min_silence_duration_ms=VAD_MIN_PAUSE_MS,
-                                min_speech_duration_ms=250,
-                                return_seconds=True,
-                            )
-                            rest_sprech = sum(s["end"] - s["start"] for s in rest_segmente)
-                            if rest_sprech < 0.5:
-                                _debug_log(f"Rest verworfen (nur {rest_sprech:.2f}s Sprache)")
-                                try: os.unlink(self.tmp_pfad)
-                                except: pass
-                                self.title = "🎤"
-                                return
-                        except Exception as e:
-                            _debug_log(f"Rest-VAD-Fehler: {e}")
                     tmp2 = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                     _sf.write(tmp2.name, rest, sr, subtype="PCM_16")
                     tmp2.close()
@@ -864,26 +844,6 @@ class DiktierApp(rumps.App):
             if berechne_audio_energie(self.tmp_pfad) < 150:
                 os.unlink(self.tmp_pfad)
                 return
-
-            # VAD-Vorprüfung auch für die komplette WAV (Push-to-Talk-Fall)
-            if _vad_verfuegbar:
-                try:
-                    audio_np, sr = _sf.read(self.tmp_pfad, dtype="float32")
-                    audio_torch = _torch.from_numpy(audio_np)
-                    segmente = _vad_stamps(
-                        audio_torch, _vad_modell,
-                        sampling_rate=sr,
-                        min_silence_duration_ms=VAD_MIN_PAUSE_MS,
-                        min_speech_duration_ms=250,
-                        return_seconds=True,
-                    )
-                    sprech_dauer = sum(s["end"] - s["start"] for s in segmente)
-                    if sprech_dauer < 0.5:
-                        _debug_log(f"Aufnahme verworfen (nur {sprech_dauer:.2f}s Sprache)")
-                        os.unlink(self.tmp_pfad)
-                        return
-                except Exception as e:
-                    _debug_log(f"Voll-VAD-Fehler: {e}")
 
             befehl = [
                 WHISPER_CLI,

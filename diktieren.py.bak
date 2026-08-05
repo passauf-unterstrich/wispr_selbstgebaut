@@ -686,7 +686,7 @@ class DiktierApp(rumps.App):
 
     def wechsle_chunking_modus(self, sender):
         global CHUNKING_MODUS
-        CHUNKING_MODUS = "klassisch" if sender.title.startswith("Live") else "live"
+        CHUNKING_MODUS = "klassisch" if CHUNKING_MODUS == "live" else "live"
         # Config speichern
         try:
             cfg = json.loads((SCRIPT_DIR / "config.json").read_text())

@@ -57,6 +57,9 @@ HALLUZINATION_BLOCKLISTE = []
 VAD_CHUNK_ZIEL_SEK = 20
 VAD_CHUNK_MAX_SEK = 45
 VAD_MIN_PAUSE_MS = 600
+TOGGLE_TASTE_NAME = "alt_r"
+DOPPEL_TAP_MS = 400
+BLINK_MS = 500
 
 # ─────────────────────────────────────────
 # CONFIG-DATEI LADEN (überschreibt Defaults oben)
@@ -74,6 +77,9 @@ if _config_path.exists():
         VAD_CHUNK_ZIEL_SEK = int(_cfg.get("vad_chunk_ziel_sek", 20))
         VAD_CHUNK_MAX_SEK  = int(_cfg.get("vad_chunk_max_sek", 45))
         VAD_MIN_PAUSE_MS   = int(_cfg.get("vad_min_pause_ms", 600))
+        TOGGLE_TASTE_NAME  = _cfg.get("toggle_taste", "alt_r")
+        DOPPEL_TAP_MS      = int(_cfg.get("doppel_tap_ms", 400))
+        BLINK_MS           = int(_cfg.get("blink_ms", 500))
     except Exception as _e:
         print(f"⚠️  config.json konnte nicht gelesen werden: {_e}")
 
@@ -174,6 +180,22 @@ def shortcut_als_text(shortcut):
     }
     return " + ".join(namen.get(k, str(k)) for k in shortcut)
 
+
+
+# ─────────────────────────────────────────
+# TOGGLE-TASTE AUFLÖSEN
+# ─────────────────────────────────────────
+def _key_aus_name(name):
+    """Wandelt Config-String wie 'alt_r' in keyboard.Key.alt_r um."""
+    try:
+        return getattr(keyboard.Key, name)
+    except AttributeError:
+        try:
+            return keyboard.KeyCode.from_char(name)
+        except Exception:
+            return keyboard.Key.alt_r
+
+TOGGLE_TASTE = _key_aus_name(TOGGLE_TASTE_NAME)
 
 # ─────────────────────────────────────────
 # VAD-INITIALISIERUNG (Silero via soundfile, umgeht torchaudio-Bug)
@@ -428,6 +450,11 @@ class DiktierApp(rumps.App):
         self.session_prompt_words = []
         self.korrektur_aktiv = False
 
+        # Toggle-Modus State
+        self.toggle_aktiv = False
+        self.toggle_start_zeit = 0
+        self.letzter_tap_zeit = 0
+
         self.title = "🎤"
 
         threading.Thread(target=self.starte_keyboard_listener, daemon=True).start()
@@ -606,6 +633,25 @@ class DiktierApp(rumps.App):
             try:
                 self.aktuelle_tasten.add(taste)
 
+                # Doppel-Tap-Erkennung für Toggle
+                if taste == TOGGLE_TASTE:
+                    jetzt = time.time()
+                    delta_ms = (jetzt - self.letzter_tap_zeit) * 1000
+                    if delta_ms < DOPPEL_TAP_MS:
+                        self.letzter_tap_zeit = 0
+                        if self.toggle_aktiv:
+                            if jetzt - self.toggle_start_zeit > 1.0:
+                                self.beende_toggle()
+                        else:
+                            if not self.aufnahme_aktiv and not self.ki_aufnahme_aktiv:
+                                if self._diktat_timer:
+                                    self._diktat_timer.cancel()
+                                    self._diktat_timer = None
+                                self.starte_toggle()
+                        return
+                    else:
+                        self.letzter_tap_zeit = jetzt
+
                 if SHORTCUT_KI.issubset(self.aktuelle_tasten):
                     if self._diktat_timer:
                         self._diktat_timer.cancel()
@@ -636,7 +682,7 @@ class DiktierApp(rumps.App):
 
                 if self.ki_aufnahme_aktiv and taste in SHORTCUT_KI:
                     self.beende_ki_aufnahme()
-                elif self.aufnahme_aktiv and taste in SHORTCUT:
+                elif self.aufnahme_aktiv and taste in SHORTCUT and not self.toggle_aktiv:
                     self.beende_aufnahme()
 
             except Exception:
@@ -647,7 +693,7 @@ class DiktierApp(rumps.App):
 
     def _starte_diktat_wenn_solo(self):
         self._diktat_timer = None
-        if not self.ki_aufnahme_aktiv and not self.aufnahme_aktiv:
+        if not self.ki_aufnahme_aktiv and not self.aufnahme_aktiv and not self.toggle_aktiv:
             self.starte_aufnahme()
 
 # ─────────────────────────────────────────
@@ -920,6 +966,68 @@ class DiktierApp(rumps.App):
 # ─────────────────────────────────────────
 # HAUPTPROGRAMM
 # ─────────────────────────────────────────
+
+
+    # ─────────────────────────────────────────
+    # TOGGLE-MODUS (Doppel-Tap Aufnahme)
+    # ─────────────────────────────────────────
+
+    def starte_toggle(self):
+        """Startet Dauer-Aufnahme (Doppel-Tap). Läuft bis nächster Doppel-Tap.
+        Icon blinkt zwischen 🔴 und ⭕."""
+        self.toggle_aktiv = True
+        self.toggle_start_zeit = time.time()
+        self.aufnahme_aktiv = True
+        self.aufnahme_start_zeit = time.time()
+        self.title = "🔴"
+        self.schnitt_offset_sample = 0
+
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        self.tmp_pfad = tmp.name
+        tmp.close()
+
+        befehl = [
+            FFMPEG, "-f", "avfoundation",
+            "-i", f":{finde_mikrofon_index(MIKROFON)}",
+            "-ar", "16000", "-ac", "1",
+            "-flush_packets", "1", "-avioflags", "direct",
+            "-y", self.tmp_pfad,
+        ]
+        self.ffmpeg_prozess = subprocess.Popen(
+            befehl,
+            stdin=subprocess.PIPE,
+            stderr=(open("/tmp/diktieren-ffmpeg.log", "a") if DEBUG else subprocess.DEVNULL),
+        )
+        _debug_log(f"Toggle-Aufnahme gestartet, VAD={_vad_verfuegbar}")
+
+        if _vad_verfuegbar:
+            self._cutter_stop = threading.Event()
+            self._cutter_thread = threading.Thread(target=self._vad_cutter, daemon=True)
+            self._cutter_thread.start()
+
+        # Blink-Thread starten
+        self._blink_stop = threading.Event()
+        self._blink_thread = threading.Thread(target=self._blink_loop, daemon=True)
+        self._blink_thread.start()
+
+        rumps.notification("Toggle-Aufnahme", "", "Läuft bis zum nächsten Doppel-Tap")
+
+    def beende_toggle(self):
+        """Beendet Dauer-Aufnahme."""
+        _debug_log("Toggle-Aufnahme beendet")
+        self.toggle_aktiv = False
+        if hasattr(self, "_blink_stop"):
+            self._blink_stop.set()
+        self.beende_aufnahme()
+
+    def _blink_loop(self):
+        """Wechselt Titel zwischen 🔴 und ⭕ solange Toggle läuft."""
+        an = True
+        while not self._blink_stop.is_set():
+            if self.toggle_aktiv:
+                self.title = "🔴" if an else "⭕"
+                an = not an
+            self._blink_stop.wait(BLINK_MS / 1000.0)
 
     # ─────────────────────────────────────────
     # VAD-BASIERTES LIVE-CHUNKING

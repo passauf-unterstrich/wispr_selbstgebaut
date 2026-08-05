@@ -53,7 +53,10 @@ echo ""
 echo "Geschätzte Dauer bei jungfräulichem Mac: 20–30 Minuten"
 echo "(davon ~15 Min Downloads: Whisper-Modell + KI-Modell)"
 echo ""
-read -p "Enter drücken um zu starten..."
+echo "Alles läuft jetzt automatisch durch – zurücklehnen und warten."
+echo "Bei Homebrew-Installation wird einmal dein Passwort abgefragt."
+echo ""
+sleep 3
 
 # ────────────────────────────────────────────────────────────
 # SCHRITT 1: Homebrew
@@ -79,7 +82,7 @@ else
     echo "✓ Homebrew installiert."
 fi
 echo ""
-read -p "Weiter mit Enter..."
+sleep 1.5
 
 # ────────────────────────────────────────────────────────────
 # SCHRITT 2: Programme
@@ -97,7 +100,7 @@ for pkg in whisper-cli ffmpeg ollama; do
     fi
 done
 echo ""
-read -p "Weiter mit Enter..."
+sleep 1.5
 
 # ────────────────────────────────────────────────────────────
 # SCHRITT 3: Python-Pakete
@@ -110,12 +113,12 @@ echo ""
 echo "Installiert die Python-Bibliotheken aus requirements.txt"
 echo "(rumps, pynput, silero-vad, torch, ...)"
 echo ""
-read -p "Enter drücken..."
+sleep 1.5
 
 mit_spinner "pip aktualisieren" pip3 install --break-system-packages --upgrade pip --quiet
 mit_spinner "Python-Pakete installieren (torch, rumps, silero-vad, ...)" \
     pip3 install --break-system-packages --quiet -r "$SCRIPT_DIR/requirements.txt"
-read -p "Weiter mit Enter..."
+sleep 1.5
 
 # ────────────────────────────────────────────────────────────
 # SCHRITT 4: Whisper-Modell (medium)
@@ -137,13 +140,13 @@ else
     echo "Download ~1.5 GB, dauert je nach Internet 3–10 Minuten."
     echo ""
     read -p "Enter drücken um Download zu starten..."
-    curl -L --progress-bar \
+    curl -L --progress-bar --retry 5 --retry-delay 3 --retry-connrefused \
       -o "$MEDIUM" \
       "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin"
     echo "✓ Whisper-medium geladen."
 fi
 echo ""
-read -p "Weiter mit Enter..."
+sleep 1.5
 
 # ────────────────────────────────────────────────────────────
 # SCHRITT 5: Ollama starten + Modell laden
@@ -170,7 +173,7 @@ else
     echo "✓ llama3.1:8b geladen."
 fi
 echo ""
-read -p "Weiter mit Enter..."
+sleep 1.5
 
 # ────────────────────────────────────────────────────────────
 # SCHRITT 6: Config-Dateien anlegen
@@ -195,7 +198,7 @@ for f in config.json assistant_style.md vocabulary.csv; do
     fi
 done
 echo ""
-read -p "Weiter mit Enter..."
+sleep 1.5
 
 # ────────────────────────────────────────────────────────────
 # SCHRITT 7: Terminal-Kurzbefehle
@@ -224,7 +227,7 @@ echo "$ALIAS_START"  >> ~/.zshrc
 echo "$ALIAS_UPDATE" >> ~/.zshrc
 echo "✓ Kurzbefehle in ~/.zshrc eingetragen."
 echo ""
-read -p "Weiter mit Enter..."
+sleep 1.5
 
 # ────────────────────────────────────────────────────────────
 # FERTIG
@@ -251,4 +254,9 @@ echo "  2. Neues Terminal-Fenster öffnen"
 echo "  3. Tippe:  diktieren"
 echo ""
 echo "Bei Fragen: passauf-unterstrich auf GitHub"
+echo ""
+echo ""
+echo "═══════════════════════════════════════════════"
+echo "  Du kannst dieses Fenster jetzt schließen."
+echo "═══════════════════════════════════════════════"
 echo ""

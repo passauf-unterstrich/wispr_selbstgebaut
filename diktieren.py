@@ -29,30 +29,35 @@ import urllib.request
 # ─────────────────────────────────────────
 # KONFIGURATION
 # ─────────────────────────────────────────
+from pathlib import Path
+import shutil
 
-# Verfügbare Modelle – hier neue einfach hinzufügen
+# Ordner in dem dieses Skript liegt – App-Dateien werden relativ dazu gefunden
+SCRIPT_DIR  = Path(__file__).resolve().parent
+MODELLE_DIR = SCRIPT_DIR / "modelle"
+
+# Verfügbare Whisper-Modelle
 MODELLE = {
-    "medium": "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/modelle/ggml-medium.bin",
-    "large-v3": "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/modelle/ggml-large-v3.bin",
+    "medium":   str(MODELLE_DIR / "ggml-medium.bin"),
+    "large-v3": str(MODELLE_DIR / "ggml-large-v3.bin"),
 }
-
-# Standardmodell beim Start
 AKTIVES_MODELL = "medium"
 
-WHISPER_CLI = "/opt/homebrew/bin/whisper-cli"
-LANGUAGE = "de"
-VOCABULARY_CSV = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/vocabulary.csv"
-FFMPEG = "/opt/homebrew/bin/ffmpeg"
-MIKROFON = "1" # MacBook Pro Microphone
-# [0] ZoomAudioDevice
-# [1] MacBook Pro Microphone  ← das wollen wir
-# [2] Microsoft Teams Audio
+# Externe Programme im PATH suchen (funktioniert egal wo Homebrew liegt)
+WHISPER_CLI = shutil.which("whisper-cli") or "/opt/homebrew/bin/whisper-cli"
+FFMPEG      = shutil.which("ffmpeg")      or "/opt/homebrew/bin/ffmpeg"
+
+LANGUAGE       = "de"
+VOCABULARY_CSV = str(SCRIPT_DIR / "vocabulary.csv")
+
+# Mikrofon: "default" = macOS System-Standard (später im Menü umstellbar)
+MIKROFON = "default"
 
 # ─────────────────────────────────────────
 # KONFIGURATION – KI-ASSISTENT
 # ─────────────────────────────────────────
 
-ASSISTANT_STYLE_FILE = "/Users/linus/Desktop/Tech/Diktierfunktion(lokal)/Selbstgebaut/assistant_style.md"
+ASSISTANT_STYLE_FILE = str(SCRIPT_DIR / "assistant_style.md")
 
 # Ollama (lokal) – ollama pull llama3.1:8b
 OLLAMA_URL    = "http://localhost:11434/api/chat"

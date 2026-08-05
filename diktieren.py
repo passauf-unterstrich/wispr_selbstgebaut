@@ -184,13 +184,27 @@ def berechne_audio_energie(pfad):
 
 
 def fuege_text_ein(text):
+    """Fügt Text ein und stellt die alte Zwischenablage danach wieder her."""
     if not text or not text.strip():
         return
+    # Alte Zwischenablage merken
+    try:
+        alte_zwischenablage = pyperclip.paste()
+    except Exception:
+        alte_zwischenablage = None
+    # Diktat in Zwischenablage → Cmd+V
     pyperclip.copy(text + " ")
     time.sleep(0.1)
     with _kb.pressed(keyboard.Key.cmd):
         _kb.press('v')
         _kb.release('v')
+    # Kurz warten bis Cmd+V durch ist, dann Original zurückschreiben
+    time.sleep(0.25)
+    if alte_zwischenablage is not None:
+        try:
+            pyperclip.copy(alte_zwischenablage)
+        except Exception:
+            pass
 
 # ─────────────────────────────────────────
 # KI-ANFRAGEN

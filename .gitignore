@@ -21,3 +21,6 @@ dist/
 
 # macOS
 .DS_Store
+
+# Persönliche Konfiguration (pro Nutzer)
+config.json

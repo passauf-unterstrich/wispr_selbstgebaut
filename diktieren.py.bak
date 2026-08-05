@@ -430,7 +430,7 @@ def _historie_hinzufuegen(text, liste):
     text = text.strip()
     # Zu große Einträge (>50 KB) nicht speichern – nur ins Menü käme das trotzdem
     # nicht sinnvoll rein und die .historie.json würde aufblähen
-    if len(text) > 50_000:
+    if len(text) > 5_000_000:  # 5 MB pro Eintrag – erst bei absurd großen Blöcken abbrechen
         return
     if text in liste:
         liste.remove(text)

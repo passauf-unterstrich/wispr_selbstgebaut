@@ -1176,7 +1176,10 @@ class DiktierApp(rumps.App):
                 start_sample = offset
                 end_sample   = offset + schnitt_sample
                 ausschnitt = audio_np[start_sample:end_sample]
-                self.schnitt_offset_sample = end_sample
+                # Overlap: nächster Chunk beginnt 400ms VOR dem Schnitt,
+                # damit leise Randwörter nicht in die Ritze fallen
+                overlap = int(0.4 * 16000)
+                self.schnitt_offset_sample = max(0, end_sample - overlap)
                 threading.Thread(
                     target=self._transkribiere_ausschnitt,
                     args=(ausschnitt, sr),
@@ -1206,7 +1209,7 @@ class DiktierApp(rumps.App):
         for seg in reversed(segmente):
             ende = seg["end"]
             if ziel_sample <= ende <= max_sample:
-                schnitt = ende + int(0.3 * SAMPLE_RATE)
+                schnitt = ende + int(0.8 * SAMPLE_RATE)  # großzügig damit leise Satzenden mitkommen
                 schnitt = min(schnitt, len(audio_np))
                 _debug_log(f"VAD-Schnitt bei {schnitt/SAMPLE_RATE:.1f}s")
                 return schnitt

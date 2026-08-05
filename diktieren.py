@@ -60,6 +60,7 @@ VAD_MIN_PAUSE_MS = 600
 TOGGLE_TASTE_NAME = "alt_r"
 DOPPEL_TAP_MS = 400
 BLINK_MS = 500
+CHUNKING_MODUS = "live"  # "live" oder "klassisch"
 
 # ─────────────────────────────────────────
 # CONFIG-DATEI LADEN (überschreibt Defaults oben)
@@ -80,6 +81,7 @@ if _config_path.exists():
         TOGGLE_TASTE_NAME  = _cfg.get("toggle_taste", "alt_r")
         DOPPEL_TAP_MS      = int(_cfg.get("doppel_tap_ms", 400))
         BLINK_MS           = int(_cfg.get("blink_ms", 500))
+        CHUNKING_MODUS     = _cfg.get("chunking_modus", "live")
     except Exception as _e:
         print(f"⚠️  config.json konnte nicht gelesen werden: {_e}")
 
@@ -522,6 +524,16 @@ class DiktierApp(rumps.App):
         threading.Thread(target=self.starte_keyboard_listener, daemon=True).start()
         threading.Thread(target=self.lade_alles, daemon=True).start()
 
+        # Chunking-Modus
+        self._chunking_modus_item = rumps.MenuItem(
+            f"Modus: {'Live-Chunking' if CHUNKING_MODUS == 'live' else 'Klassisch (am Ende)'}",
+            callback=self.wechsle_chunking_modus,
+        )
+        try:
+            self.menu.add(self._chunking_modus_item)
+        except Exception as e:
+            _debug_log(f"Modus-Menü-Anhängen fehlgeschlagen: {e}")
+
         # Historie-Untermenüs
         global _app_instanz
         _app_instanz = self
@@ -672,6 +684,23 @@ class DiktierApp(rumps.App):
         self.menu["KI-Modus"][self.aktiver_ki_modus].state = True
         rumps.notification("KI-Modus", "", f"Aktiv: {self.aktiver_ki_modus}")
 
+    def wechsle_chunking_modus(self, sender):
+        global CHUNKING_MODUS
+        CHUNKING_MODUS = "klassisch" if CHUNKING_MODUS == "live" else "live"
+        # Config speichern
+        try:
+            cfg = json.loads((SCRIPT_DIR / "config.json").read_text())
+            cfg["chunking_modus"] = CHUNKING_MODUS
+            (SCRIPT_DIR / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+        except Exception as e:
+            _debug_log(f"Modus-Speichern fehlgeschlagen: {e}")
+        # Menü-Label updaten
+        if hasattr(self, "_chunking_modus_item"):
+            self._chunking_modus_item.title = f"Modus: {'Live-Chunking' if CHUNKING_MODUS == 'live' else 'Klassisch (am Ende)'}"
+        rumps.notification("Chunking-Modus geändert",
+                           "",
+                           "Live-Chunking aktiv" if CHUNKING_MODUS == "live" else "Klassisch: Text kommt komplett am Ende")
+
     def wechsle_kleinschreibung(self, sender):
         self.kleinschreibung_aktiv = not self.kleinschreibung_aktiv
         sender.state = self.kleinschreibung_aktiv
@@ -806,7 +835,7 @@ class DiktierApp(rumps.App):
         _debug_log(f"Aufnahme Diktat gestartet, VAD={_vad_verfuegbar}")
 
         # VAD-Cutter-Thread starten (nur wenn VAD verfügbar)
-        if _vad_verfuegbar:
+        if _vad_verfuegbar and CHUNKING_MODUS == "live":
             self._cutter_stop = threading.Event()
             self._cutter_thread = threading.Thread(target=self._vad_cutter, daemon=True)
             self._cutter_thread.start()
@@ -1114,7 +1143,7 @@ class DiktierApp(rumps.App):
         )
         _debug_log(f"Toggle-Aufnahme gestartet, VAD={_vad_verfuegbar}")
 
-        if _vad_verfuegbar:
+        if _vad_verfuegbar and CHUNKING_MODUS == "live":
             self._cutter_stop = threading.Event()
             self._cutter_thread = threading.Thread(target=self._vad_cutter, daemon=True)
             self._cutter_thread.start()

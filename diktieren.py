@@ -52,6 +52,8 @@ VOCABULARY_CSV = str(SCRIPT_DIR / "vocabulary.csv")
 
 # Mikrofon: "default" = macOS System-Standard (später im Menü umstellbar)
 MIKROFON = "default"
+MIN_AUFNAHME_SEK = 0.8
+HALLUZINATION_BLOCKLISTE = []
 
 # ─────────────────────────────────────────
 # CONFIG-DATEI LADEN (überschreibt Defaults oben)
@@ -64,6 +66,8 @@ if _config_path.exists():
         AKTIVES_MODELL = _cfg.get("aktives_modell", AKTIVES_MODELL)
         LANGUAGE       = _cfg.get("sprache",        LANGUAGE)
         MIKROFON       = _cfg.get("mikrofon",       MIKROFON)
+        MIN_AUFNAHME_SEK        = _cfg.get("min_aufnahme_sekunden", 0.8)
+        HALLUZINATION_BLOCKLISTE = _cfg.get("halluzination_blockliste", [])
     except Exception as _e:
         print(f"⚠️  config.json konnte nicht gelesen werden: {_e}")
 
@@ -591,6 +595,7 @@ class DiktierApp(rumps.App):
 
     def starte_aufnahme(self):
         self.aufnahme_aktiv = True
+        self.aufnahme_start_zeit = time.time()
         self.title = "🔴"
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -621,15 +626,25 @@ class DiktierApp(rumps.App):
 
     def beende_aufnahme(self):
         self.aufnahme_aktiv = False
+        dauer = time.time() - getattr(self, "aufnahme_start_zeit", 0)
         self.title = "⏳"
 
-        # Timer canceln falls noch läuft
         if hasattr(self, '_warn_timer'):
             self._warn_timer.cancel()
 
         if self.ffmpeg_prozess:
             self.ffmpeg_prozess.terminate()
             self.ffmpeg_prozess.wait()
+
+        # Zu kurz → verwerfen (versehentlicher Trigger)
+        if dauer < MIN_AUFNAHME_SEK:
+            self.title = "🎤"
+            try:
+                if self.tmp_pfad and os.path.exists(self.tmp_pfad):
+                    os.unlink(self.tmp_pfad)
+            except Exception:
+                pass
+            return
 
         threading.Thread(target=self.transkribiere, daemon=True).start()
 
@@ -642,6 +657,7 @@ class DiktierApp(rumps.App):
         self.ki_kontext = pyperclip.paste().strip()
 
         self.ki_aufnahme_aktiv = True
+        self.ki_aufnahme_start_zeit = time.time()
         self.title = "🟣"
 
         self.ki_aufnahme_aktiv = True
@@ -657,12 +673,21 @@ class DiktierApp(rumps.App):
 
     def beende_ki_aufnahme(self):
         self.ki_aufnahme_aktiv = False
+        dauer = time.time() - getattr(self, "ki_aufnahme_start_zeit", 0)
         self.title = "⏳"
         if hasattr(self, '_warn_timer'):
             self._warn_timer.cancel()
         if self.ffmpeg_prozess_ki:
             self.ffmpeg_prozess_ki.terminate()
             self.ffmpeg_prozess_ki.wait()
+        if dauer < MIN_AUFNAHME_SEK:
+            self.title = "🎤"
+            try:
+                if self.tmp_pfad_ki and os.path.exists(self.tmp_pfad_ki):
+                    os.unlink(self.tmp_pfad_ki)
+            except Exception:
+                pass
+            return
         threading.Thread(target=self.transkribiere_ki, daemon=True).start()
 
 # ─────────────────────────────────────────
@@ -701,6 +726,11 @@ class DiktierApp(rumps.App):
             )
 
             text = ergebnis.stdout.strip()
+
+            # Whisper-Halluzinationen bei Stille filtern
+            if text.strip() in HALLUZINATION_BLOCKLISTE:
+                os.unlink(self.tmp_pfad)
+                return
 
             if not text:
                 return

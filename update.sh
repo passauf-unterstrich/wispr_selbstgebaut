@@ -38,7 +38,7 @@ echo ""
 # ── 3. Python-Pakete: nur aktualisieren wenn requirements.txt sich geändert hat ──
 if git diff "$AKTUELLER_TAG" "$LETZTER_TAG" --name-only 2>/dev/null | grep -q "requirements.txt"; then
     echo "• requirements.txt hat sich geändert – installiere Pakete..."
-    pip3 install --break-system-packages -r requirements.txt
+    "$SCRIPT_DIR/.venv/bin/pip" install -r requirements.txt
 else
     echo "✓ Keine neuen Pakete nötig."
 fi

@@ -92,11 +92,16 @@ echo ""
 echo "Schritt 2 von 7 – Programme (whisper-cli, ffmpeg, ollama)"
 echo "──────────────────────────────────────────────────────────"
 
-for pkg in whisper-cli ffmpeg ollama; do
+for pkg in whisper-cpp ffmpeg ollama; do
     if brew list "$pkg" &>/dev/null; then
         echo "✓ $pkg ist installiert."
     else
-        mit_spinner "Installiere $pkg via brew" brew install "$pkg"
+        echo ""
+        echo "• Installiere $pkg via brew (kann 5–20 Minuten dauern beim ersten Mal)..."
+        echo "  Fortschritt wird direkt von Homebrew angezeigt:"
+        echo ""
+        brew install "$pkg"
+        echo "✓ $pkg installiert."
     fi
 done
 echo ""

@@ -297,18 +297,68 @@ def berechne_audio_energie(pfad):
     return (sum(s**2 for s in samples) / len(samples)) ** 0.5
 
 
-def fuege_text_ein(text):
-    """Fügt Text ein und stellt die alte Zwischenablage danach wieder her."""
+
+def _applescript_escape(text):
+    """Escapt Text für sichere Einbettung in AppleScript-String-Literal.
+    Verhindert Injektion durch Backslash, Anführungszeichen, Zeilenumbrüche."""
+    if text is None:
+        return ""
+    # Erst Backslash (muss zuerst!), dann Anführungszeichen
+    text = text.replace("\\", "\\\\")
+    text = text.replace('"', '\\"')
+    # Zeilenumbrüche und andere Kontrollzeichen entfernen
+    text = text.replace("\n", " ").replace("\r", " ")
+    # Länge begrenzen (Dialog kann eh nicht mehr sinnvoll anzeigen)
+    if len(text) > 200:
+        text = text[:200] + "…"
+    return text
+
+
+def _sieht_aus_wie_passwort(text):
+    """Heuristik: erkennt typische Passwort/Token-Muster.
+    Konservativ – erwischt Passwort-Manager-Ausgaben, aber keine URLs oder Namen."""
+    if not text or len(text) < 4 or len(text) > 200:
+        return False
+    # Leerzeichen? Dann kein Passwort (Sätze, Namen mit Leerzeichen)
+    if " " in text or "\n" in text or "\t" in text:
+        return False
+    # URLs durchlassen
+    if text.startswith(("http://", "https://", "www.", "ftp://", "file://")):
+        return False
+    # E-Mail-Adressen durchlassen
+    if "@" in text and "." in text and len(text.split("@")) == 2:
+        return False
+    # Zähle Sonderzeichen (nicht alphanumerisch, nicht . oder -)
+    sonderzeichen = sum(1 for c in text if not c.isalnum() and c not in ".-_/:")
+    ziffern = sum(1 for c in text if c.isdigit())
+    buchstaben = sum(1 for c in text if c.isalpha())
+    # Klassisches Passwort: Sonderzeichen drin und gemischt
+    if sonderzeichen >= 1 and ziffern >= 1 and buchstaben >= 1:
+        return True
+    # API-Key/Token: sehr lang, alphanumerisch, hoher Ziffern-Anteil
+    if len(text) >= 20 and ziffern >= 3 and buchstaben >= 3 and " " not in text:
+        # Häufig: sk-..., ghp_..., xoxb-... etc.
+        if text[:4].lower() in ("sk-a", "sk-p", "ghp_", "gho_", "xoxb", "xoxp", "pk_l", "pk_t"):
+            return True
+        # Oder: nur base64/hex-ähnliche Zeichen
+        if all(c.isalnum() or c in "-_=" for c in text) and len(text) >= 32:
+            return True
+    return False
+
+def fuege_text_ein(text, zu_historie=True):
+    """Fügt Text ein und stellt die alte Zwischenablage danach wieder her.
+    zu_historie=False verhindert Aufnahme in Diktier-Historie (bei Historie-Klick)."""
     if not text or not text.strip():
         return
-    # Historie-Aufnahme
-    try:
-        _historie_hinzufuegen(text.strip(), DIKTIER_HISTORIE)
-        _speichere_historie()
-        if _app_instanz is not None:
-            _app_instanz._aktualisiere_diktier_menu()
-    except Exception as e:
-        _debug_log(f"Historie-Aufnahme fehlgeschlagen: {e}")
+    # Historie-Aufnahme (nur bei echten Diktaten, nicht bei Historie-Klicks)
+    if zu_historie:
+        try:
+            _historie_hinzufuegen(text.strip(), DIKTIER_HISTORIE)
+            _speichere_historie()
+            if _app_instanz is not None:
+                _app_instanz._aktualisiere_diktier_menu()
+        except Exception as e:
+            _debug_log(f"Historie-Aufnahme fehlgeschlagen: {e}")
     # Alte Zwischenablage merken
     try:
         alte_zwischenablage = pyperclip.paste()
@@ -518,6 +568,7 @@ class DiktierApp(rumps.App):
         self.toggle_aktiv = False
         self.toggle_start_zeit = 0
         self.letzter_tap_zeit = 0
+        self.clipboard_poller_aktiv = True
 
         self.title = "🎤"
 
@@ -626,8 +677,8 @@ class DiktierApp(rumps.App):
         time.sleep(0.15)
         falsches_wort = pyperclip.paste().strip()
 
-        # AppleScript-Dialog öffnen
-        falsch_anzeige = falsches_wort if falsches_wort else "?"
+        # AppleScript-Dialog öffnen (Text escapen gegen Injektion!)
+        falsch_anzeige = _applescript_escape(falsches_wort if falsches_wort else "?")
         script = f'''
         tell application "System Events"
             set frontApp to name of first process whose frontmost is true
@@ -700,6 +751,16 @@ class DiktierApp(rumps.App):
         rumps.notification("Chunking-Modus geändert",
                            "",
                            "Live-Chunking aktiv" if CHUNKING_MODUS == "live" else "Klassisch: Text kommt komplett am Ende")
+
+    def wechsle_clipboard_poller(self, sender):
+        self.clipboard_poller_aktiv = not getattr(self, "clipboard_poller_aktiv", True)
+        # Menü-Label updaten
+        if hasattr(self, "_clipboard_toggle_item"):
+            self._clipboard_toggle_item.title = (
+                "📋 Zwischenablage: mitschneiden" if self.clipboard_poller_aktiv
+                else "📋 Zwischenablage: pausiert"
+            )
+        _debug_log(f"Clipboard-Poller: {'aktiv' if self.clipboard_poller_aktiv else 'pausiert'}")
 
     def wechsle_kleinschreibung(self, sender):
         self.kleinschreibung_aktiv = not self.kleinschreibung_aktiv
@@ -1369,7 +1430,7 @@ class DiktierApp(rumps.App):
 
     def _make_historie_callback(self, text):
         def _cb(sender):
-            fuege_text_ein(text)
+            fuege_text_ein(text, zu_historie=False)
         return _cb
 
     def _clipboard_poller(self):
@@ -1379,6 +1440,8 @@ class DiktierApp(rumps.App):
         except: pass
         while True:
             time.sleep(1.0)
+            if not getattr(self, "clipboard_poller_aktiv", True):
+                continue
             try:
                 aktuell = pyperclip.paste() or ""
             except Exception:
@@ -1389,6 +1452,10 @@ class DiktierApp(rumps.App):
             if aktuell == _letzter_eigener_copy:
                 continue
             if DIKTIER_HISTORIE and aktuell.strip() == DIKTIER_HISTORIE[0]:
+                continue
+            # Passwörter/Tokens nicht in Historie
+            if _sieht_aus_wie_passwort(aktuell.strip()):
+                _debug_log("Clipboard-Eintrag sieht aus wie Passwort – übersprungen")
                 continue
             _historie_hinzufuegen(aktuell, CLIPBOARD_HISTORIE)
             _speichere_historie()

@@ -18,13 +18,25 @@ if pgrep -f "diktieren.py" > /dev/null; then
     read -p ""
 fi
 
-# ── 2. Code aktualisieren ──
+# ── 2. Auf neuesten Release-Tag springen (kein main-HEAD) ──
 echo "• Hole neuen Code von GitHub..."
-git pull
+git fetch --tags --quiet origin
+LETZTER_TAG=$(git tag --sort=-v:refname | head -n1)
+if [ -z "$LETZTER_TAG" ]; then
+    echo "⚠ Kein Release-Tag gefunden – Update abgebrochen."
+    exit 1
+fi
+AKTUELLER_TAG=$(git describe --tags --exact-match 2>/dev/null || echo "keiner")
+if [ "$AKTUELLER_TAG" = "$LETZTER_TAG" ]; then
+    echo "✓ Schon auf neuestem Release: $LETZTER_TAG"
+else
+    echo "• Wechsle von $AKTUELLER_TAG auf $LETZTER_TAG"
+    git checkout --quiet "$LETZTER_TAG"
+fi
 echo ""
 
 # ── 3. Python-Pakete: nur aktualisieren wenn requirements.txt sich geändert hat ──
-if git diff HEAD~1 HEAD --name-only 2>/dev/null | grep -q "requirements.txt"; then
+if git diff "$AKTUELLER_TAG" "$LETZTER_TAG" --name-only 2>/dev/null | grep -q "requirements.txt"; then
     echo "• requirements.txt hat sich geändert – installiere Pakete..."
     pip3 install --break-system-packages -r requirements.txt
 else

@@ -48,11 +48,22 @@ mkdir -p "$BASE_DIR"
 # ── Klonen oder aktualisieren ──
 if [ -d "$APP_DIR/.git" ]; then
     echo "• Wispr ist bereits geklont – aktualisiere..."
-    cd "$APP_DIR" && git pull
+    cd "$APP_DIR" && git fetch --tags --quiet
 else
     echo "• Klone Wispr nach $APP_DIR..."
-    git clone "$REPO_URL" "$APP_DIR"
+    git clone --quiet "$REPO_URL" "$APP_DIR"
+    cd "$APP_DIR" && git fetch --tags --quiet
 fi
+
+# ── Auf neuesten Release-Tag springen (kein main-HEAD) ──
+LETZTER_TAG=$(git tag --sort=-v:refname | head -n1)
+if [ -z "$LETZTER_TAG" ]; then
+    echo "⚠ Kein Release-Tag gefunden – Setup abgebrochen."
+    echo "  Wende dich an den Betreuer (passauf-unterstrich)."
+    exit 1
+fi
+echo "• Verwende Release: $LETZTER_TAG"
+git checkout --quiet "$LETZTER_TAG"
 
 # ── setup.sh in neuem Terminal-Fenster starten ──
 # Der Weg über curl|bash blockiert stdin – deshalb öffnen wir ein frisches

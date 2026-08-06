@@ -148,7 +148,20 @@ else
     curl -L --progress-bar --retry 5 --retry-delay 3 --retry-connrefused \
       -o "$MEDIUM" \
       "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin"
-    echo "✓ Whisper-medium geladen."
+
+    # SHA256-Prüfung – schützt vor manipuliertem Download
+    ERWARTET="6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"
+    ERHALTEN=$(shasum -a 256 "$MEDIUM" | awk '"'"'{print $1}'"'"')
+    if [ "$ERHALTEN" != "$ERWARTET" ]; then
+        echo ""
+        echo "✗ SHA256-Prüfung fehlgeschlagen!"
+        echo "  Erwartet: $ERWARTET"
+        echo "  Erhalten: $ERHALTEN"
+        echo "  Datei gelöscht. Setup abgebrochen."
+        rm -f "$MEDIUM"
+        exit 1
+    fi
+    echo "✓ Whisper-medium geladen und geprüft."
 fi
 echo ""
 sleep 1.5

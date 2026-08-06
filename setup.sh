@@ -120,9 +120,17 @@ echo "(rumps, pynput, silero-vad, torch, ...)"
 echo ""
 sleep 1.5
 
-mit_spinner "pip aktualisieren" pip3 install --break-system-packages --upgrade pip --quiet
+# venv anlegen (isoliert vom System-Python)
+VENV_DIR="$SCRIPT_DIR/.venv"
+if [ ! -d "$VENV_DIR" ]; then
+    echo "• Lege virtuelle Python-Umgebung an..."
+    python3 -m venv "$VENV_DIR"
+fi
+
+VENV_PIP="$VENV_DIR/bin/pip"
+mit_spinner "pip aktualisieren" "$VENV_PIP" install --upgrade pip --quiet
 mit_spinner "Python-Pakete installieren (torch, rumps, silero-vad, ...)" \
-    pip3 install --break-system-packages --quiet -r "$SCRIPT_DIR/requirements.txt"
+    "$VENV_PIP" install --quiet -r "$SCRIPT_DIR/requirements.txt"
 sleep 1.5
 
 # ────────────────────────────────────────────────────────────
@@ -232,7 +240,7 @@ echo "  diktieren         → startet die App"
 echo "  diktieren-update  → aktualisiert auf neueste Version"
 echo ""
 
-ALIAS_START="alias diktieren=\"cd '$SCRIPT_DIR' && python3 diktieren.py\""
+ALIAS_START="alias diktieren=\"cd '$SCRIPT_DIR' && '$VENV_DIR/bin/python3' diktieren.py\""
 ALIAS_UPDATE="alias diktieren-update=\"bash '$SCRIPT_DIR/update.sh'\""
 
 # Alte Einträge entfernen (falls Setup schon mal lief)

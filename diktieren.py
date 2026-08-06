@@ -297,18 +297,20 @@ def berechne_audio_energie(pfad):
     return (sum(s**2 for s in samples) / len(samples)) ** 0.5
 
 
-def fuege_text_ein(text):
-    """Fügt Text ein und stellt die alte Zwischenablage danach wieder her."""
+def fuege_text_ein(text, zu_historie=True):
+    """Fügt Text ein und stellt die alte Zwischenablage danach wieder her.
+    zu_historie=False verhindert Aufnahme in Diktier-Historie (bei Historie-Klick)."""
     if not text or not text.strip():
         return
-    # Historie-Aufnahme
-    try:
-        _historie_hinzufuegen(text.strip(), DIKTIER_HISTORIE)
-        _speichere_historie()
-        if _app_instanz is not None:
-            _app_instanz._aktualisiere_diktier_menu()
-    except Exception as e:
-        _debug_log(f"Historie-Aufnahme fehlgeschlagen: {e}")
+    # Historie-Aufnahme (nur bei echten Diktaten, nicht bei Historie-Klicks)
+    if zu_historie:
+        try:
+            _historie_hinzufuegen(text.strip(), DIKTIER_HISTORIE)
+            _speichere_historie()
+            if _app_instanz is not None:
+                _app_instanz._aktualisiere_diktier_menu()
+        except Exception as e:
+            _debug_log(f"Historie-Aufnahme fehlgeschlagen: {e}")
     # Alte Zwischenablage merken
     try:
         alte_zwischenablage = pyperclip.paste()
@@ -1369,7 +1371,7 @@ class DiktierApp(rumps.App):
 
     def _make_historie_callback(self, text):
         def _cb(sender):
-            fuege_text_ein(text)
+            fuege_text_ein(text, zu_historie=False)
         return _cb
 
     def _clipboard_poller(self):

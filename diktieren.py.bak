@@ -590,10 +590,15 @@ class DiktierApp(rumps.App):
         _app_instanz = self
         self._baue_historie_menues()
         threading.Thread(target=self._clipboard_poller, daemon=True).start()
+        self._clipboard_toggle_item = rumps.MenuItem(
+            "📋 Zwischenablage: mitschneiden",
+            callback=self.wechsle_clipboard_poller,
+        )
         try:
             self.menu.add(rumps.separator)
             self.menu.add(self._diktier_submenu)
             self.menu.add(self._clipboard_submenu)
+            self.menu.add(self._clipboard_toggle_item)
         except Exception as e:
             _debug_log(f"Historie-Menü-Anhängen fehlgeschlagen: {e}")
 
@@ -1276,10 +1281,8 @@ class DiktierApp(rumps.App):
                 start_sample = offset
                 end_sample   = offset + schnitt_sample
                 ausschnitt = audio_np[start_sample:end_sample]
-                # Overlap: nächster Chunk beginnt 400ms VOR dem Schnitt,
-                # damit leise Randwörter nicht in die Ritze fallen
-                overlap = int(0.4 * 16000)
-                self.schnitt_offset_sample = max(0, end_sample - overlap)
+                # Kein Overlap – sonst doppelte Wörter an Nahtstellen
+                self.schnitt_offset_sample = end_sample
                 threading.Thread(
                     target=self._transkribiere_ausschnitt,
                     args=(ausschnitt, sr),
@@ -1309,7 +1312,7 @@ class DiktierApp(rumps.App):
         for seg in reversed(segmente):
             ende = seg["end"]
             if ziel_sample <= ende <= max_sample:
-                schnitt = ende + int(0.8 * SAMPLE_RATE)  # großzügig damit leise Satzenden mitkommen
+                schnitt = ende + int(0.5 * SAMPLE_RATE)  # großzügig damit leise Satzenden mitkommen
                 schnitt = min(schnitt, len(audio_np))
                 _debug_log(f"VAD-Schnitt bei {schnitt/SAMPLE_RATE:.1f}s")
                 return schnitt

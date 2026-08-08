@@ -53,10 +53,27 @@ echo ""
 echo "Geschätzte Dauer bei jungfräulichem Mac: 20–30 Minuten"
 echo "(davon ~15 Min Downloads: Whisper-Modell + KI-Modell)"
 echo ""
-echo "Alles läuft jetzt automatisch durch – zurücklehnen und warten."
-echo "Bei Homebrew-Installation wird einmal dein Passwort abgefragt."
 echo ""
-sleep 3
+echo "Zwei Wege:"
+echo ""
+echo "  [A] Alles automatisch nachladen aus dem Internet (Standard)"
+echo "      Braucht ~7 GB Download, dauert je nach Internet 15–60 Min."
+echo ""
+echo "  [B] ZIP-Dateien mit den Modellen habe ich schon im Downloads-Ordner"
+echo "      Namen der Dateien: wispr-whisper.zip + wispr-ollama.zip"
+echo "      Dann geht das Setup deutlich schneller (nur ~5 Min)."
+echo ""
+read -p "A oder B eingeben und Enter drücken: " MODUS
+MODUS=$(echo "$MODUS" | tr '[:lower:]' '[:upper:]')
+if [ "$MODUS" != "B" ]; then MODUS="A"; fi
+echo ""
+echo "Gewählt: Modus $MODUS"
+echo ""
+if [ "$MODUS" = "A" ]; then
+    echo "Alles läuft jetzt automatisch durch – zurücklehnen und warten."
+    echo "Bei Homebrew-Installation wird einmal dein Passwort abgefragt."
+fi
+sleep 2
 
 # ────────────────────────────────────────────────────────────
 # SCHRITT 1: Homebrew
@@ -144,6 +161,31 @@ echo "────────────────────────�
 MODELL_DIR="$SCRIPT_DIR/modelle"
 MEDIUM="$MODELL_DIR/ggml-medium.bin"
 mkdir -p "$MODELL_DIR"
+
+# ── Modus B: Vor dem Download-Versuch die ZIPs aus Downloads entpacken ──
+if [ "$MODUS" = "B" ] && [ ! -f "$MEDIUM" ]; then
+    WHISPER_ZIP="$HOME/Downloads/wispr-whisper.zip"
+    OLLAMA_ZIP="$HOME/Downloads/wispr-ollama.zip"
+    if [ ! -f "$WHISPER_ZIP" ] || [ ! -f "$OLLAMA_ZIP" ]; then
+        echo ""
+        echo "✗ ZIP-Dateien nicht gefunden im Downloads-Ordner:"
+        echo "  Erwartet: $WHISPER_ZIP"
+        echo "  Erwartet: $OLLAMA_ZIP"
+        echo ""
+        echo "Bitte beide ZIPs nach ~/Downloads/ legen und dann"
+        echo "im Terminal erneut ausführen:"
+        echo ""
+        echo "  cd $SCRIPT_DIR && bash setup.sh"
+        echo ""
+        exit 1
+    fi
+    echo "• Entpacke Whisper-Modell aus $WHISPER_ZIP ..."
+    unzip -o -q "$WHISPER_ZIP" -d "$SCRIPT_DIR"
+    echo "• Entpacke Ollama-Modell aus $OLLAMA_ZIP ..."
+    unzip -o -q "$OLLAMA_ZIP" -d "$HOME"
+    echo "✓ ZIPs entpackt."
+    echo ""
+fi
 
 if [ -f "$MEDIUM" ]; then
     echo "✓ Whisper-medium schon da."

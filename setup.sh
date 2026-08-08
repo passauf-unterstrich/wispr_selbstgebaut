@@ -184,6 +184,32 @@ if [ "$MODUS" = "B" ] && [ ! -f "$MEDIUM" ]; then
     echo "• Entpacke Ollama-Modell aus $OLLAMA_ZIP ..."
     unzip -o -q "$OLLAMA_ZIP" -d "$HOME"
     echo "✓ ZIPs entpackt."
+
+    # Ollama-Service neu starten, damit er die frisch entpackten Modelle einliest
+    echo "• Aktualisiere Ollama-Modell-Registry ..."
+    brew services restart ollama &>/dev/null || true
+    sleep 3
+
+    # Prüfen ob das Modell jetzt erkannt wird
+    if ollama list 2>/dev/null | grep -q "llama3.1:8b"; then
+        echo "✓ Ollama erkennt llama3.1:8b."
+    else
+        echo ""
+        echo "⚠ Ollama erkennt das Modell noch nicht. Versuche zweiten Neustart..."
+        brew services stop ollama &>/dev/null || true
+        sleep 2
+        brew services start ollama &>/dev/null || true
+        sleep 4
+        if ollama list 2>/dev/null | grep -q "llama3.1:8b"; then
+            echo "✓ Ollama erkennt llama3.1:8b."
+        else
+            echo ""
+            echo "✗ Ollama findet das entpackte Modell nicht."
+            echo "  Bitte manuell prüfen: ollama list"
+            echo "  Falls leer: ollama pull llama3.1:8b (5 GB Download)"
+            exit 1
+        fi
+    fi
     echo ""
 fi
 

@@ -109,7 +109,7 @@ echo ""
 echo "Schritt 2 von 7 – Programme (whisper-cli, ffmpeg, ollama)"
 echo "──────────────────────────────────────────────────────────"
 
-for pkg in whisper-cpp ffmpeg ollama; do
+for pkg in cmake ffmpeg ollama; do
     if brew list "$pkg" &>/dev/null; then
         echo "✓ $pkg ist installiert."
     else
@@ -136,6 +136,31 @@ echo "Installiert die Python-Bibliotheken aus requirements.txt"
 echo "(rumps, pynput, silero-vad, torch, ...)"
 echo ""
 sleep 1.5
+
+# ── whisper.cpp selbst bauen (feste Version, chip-unabhängig) ──
+WHISPER_DIR="$SCRIPT_DIR/whisper.cpp"
+WHISPER_BIN="$WHISPER_DIR/build/bin/whisper-cli"
+WHISPER_TAG="v1.7.5"  # getestete Version, läuft auf allen Apple Silicon
+
+if [ -f "$WHISPER_BIN" ]; then
+    echo "✓ whisper-cli schon gebaut."
+else
+    echo ""
+    echo "• Baue whisper.cpp aus Quellcode (~3 Min beim ersten Mal)..."
+    if [ ! -d "$WHISPER_DIR" ]; then
+        git clone --quiet --depth 1 --branch "$WHISPER_TAG" \
+            https://github.com/ggml-org/whisper.cpp.git "$WHISPER_DIR"
+    fi
+    cd "$WHISPER_DIR"
+    mit_spinner "Konfiguriere Build (cmake)" cmake -B build -DCMAKE_BUILD_TYPE=Release
+    mit_spinner "Kompiliere whisper-cli (~3 Min)" cmake --build build --config Release -j
+    cd "$SCRIPT_DIR"
+    if [ ! -f "$WHISPER_BIN" ]; then
+        echo "✗ whisper-cli-Build fehlgeschlagen"
+        exit 1
+    fi
+    echo "✓ whisper-cli gebaut."
+fi
 
 # venv anlegen (isoliert vom System-Python)
 VENV_DIR="$SCRIPT_DIR/.venv"
@@ -277,15 +302,6 @@ echo ""
 echo "Schritt 6 von 7 – Persönliche Config-Dateien"
 echo "─────────────────────────────────────────────"
 
-# Auf älteren Apple-Chips (vor M5) Whisper auf CPU zwingen (Metal-Bug)
-CHIP_INFO=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "unknown")
-if echo "$CHIP_INFO" | grep -qE "M1|M2|M3|M4"; then
-    NEED_NO_GPU=true
-    echo "• Erkannter Chip: $CHIP_INFO → Whisper läuft auf CPU (Metal-Kompatibilität)"
-else
-    NEED_NO_GPU=false
-fi
-
 for f in config.json assistant_style.md vocabulary.csv; do
     if [ -f "$SCRIPT_DIR/$f" ]; then
         echo "✓ $f existiert schon (nicht überschrieben)."
@@ -300,17 +316,6 @@ for f in config.json assistant_style.md vocabulary.csv; do
     fi
 done
 
-# whisper_no_gpu in Config setzen, falls Chip vor M5
-if [ "$NEED_NO_GPU" = "true" ] && [ -f "$SCRIPT_DIR/config.json" ]; then
-    python3 -c "
-import json
-p='$SCRIPT_DIR/config.json'
-c=json.load(open(p))
-c['whisper_no_gpu']=True
-json.dump(c,open(p,'w'),indent=2,ensure_ascii=False)
-"
-    echo "✓ Whisper-Modus auf CPU gesetzt (config.json: whisper_no_gpu=true)"
-fi
 echo ""
 sleep 1.5
 

@@ -26,3 +26,4 @@ dist/
 config.json
 .historie.json
 .venv/
+whisper.cpp/

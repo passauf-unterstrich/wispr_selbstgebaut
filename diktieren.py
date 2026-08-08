@@ -44,7 +44,12 @@ MODELLE = {
 AKTIVES_MODELL = "medium"
 
 # Externe Programme im PATH suchen (funktioniert egal wo Homebrew liegt)
-WHISPER_CLI = shutil.which("whisper-cli") or "/opt/homebrew/bin/whisper-cli"
+# Lokal gebaute whisper-cli bevorzugen (chip-stabil), Fallback auf System
+_local_whisper = SCRIPT_DIR / "whisper.cpp" / "build" / "bin" / "whisper-cli"
+if _local_whisper.exists():
+    WHISPER_CLI = str(_local_whisper)
+else:
+    WHISPER_CLI = shutil.which("whisper-cli") or "/opt/homebrew/bin/whisper-cli"
 FFMPEG      = shutil.which("ffmpeg")      or "/opt/homebrew/bin/ffmpeg"
 
 LANGUAGE       = "de"
@@ -1114,7 +1119,7 @@ class DiktierApp(rumps.App):
                 text = text.lower()
 
             # Dedup: wenn dieser Chunk mit dem Ende des vorherigen anfängt, überlappenden Teil kappen
-            if ausschnitt and _app_instanz is not None and _app_instanz._letzter_chunk_ende:
+            if _app_instanz is not None and _app_instanz._letzter_chunk_ende:
                 letzter = _app_instanz._letzter_chunk_ende
                 text_lower = text.lower().lstrip()
                 for laenge in range(min(len(letzter), 40), 4, -1):
@@ -1129,7 +1134,7 @@ class DiktierApp(rumps.App):
             if text.strip():
                 fuege_text_ein(text)
                 # Chunk-Ende merken (letzte ~40 Zeichen ohne Sonderzeichen am Rand)
-                if ausschnitt and _app_instanz is not None:
+                if _app_instanz is not None:
                     _app_instanz._letzter_chunk_ende = text.strip()[-40:]
 
             os.unlink(self.tmp_pfad)

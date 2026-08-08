@@ -53,6 +53,7 @@ VOCABULARY_CSV = str(SCRIPT_DIR / "vocabulary.csv")
 # Mikrofon: "default" = macOS System-Standard (später im Menü umstellbar)
 MIKROFON = "default"
 MIN_AUFNAHME_SEK = 0.8
+WHISPER_NO_GPU = False
 HALLUZINATION_BLOCKLISTE = []
 VAD_CHUNK_ZIEL_SEK = 20
 VAD_CHUNK_MAX_SEK = 45
@@ -75,6 +76,7 @@ if _config_path.exists():
         MIKROFON       = _cfg.get("mikrofon",       MIKROFON)
         MIN_AUFNAHME_SEK        = _cfg.get("min_aufnahme_sekunden", 0.8)
         HALLUZINATION_BLOCKLISTE = _cfg.get("halluzination_blockliste", [])
+        WHISPER_NO_GPU = bool(_cfg.get("whisper_no_gpu", False))
         VAD_CHUNK_ZIEL_SEK = int(_cfg.get("vad_chunk_ziel_sek", 20))
         VAD_CHUNK_MAX_SEK  = int(_cfg.get("vad_chunk_max_sek", 45))
         VAD_MIN_PAUSE_MS   = int(_cfg.get("vad_min_pause_ms", 600))
@@ -1390,6 +1392,9 @@ class DiktierApp(rumps.App):
                 "--no-speech-thold", "0.8",
                 "--file", wav_pfad,
             ]
+            # Auf pre-M5-Chips crasht Metal – CPU nutzen wenn config es sagt
+            if WHISPER_NO_GPU:
+                befehl.insert(1, "--no-gpu")
             full_prompt = self.initial_prompt
             if self.session_prompt_words:
                 extra = ", ".join(self.session_prompt_words)

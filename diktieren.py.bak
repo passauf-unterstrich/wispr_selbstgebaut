@@ -458,6 +458,7 @@ _app_instanz = None
 _letzter_eigener_copy = ""
 
 def _lade_historie():
+    import json
     global DIKTIER_HISTORIE, CLIPBOARD_HISTORIE
     if HISTORIE_DATEI.exists():
         try:
@@ -468,6 +469,7 @@ def _lade_historie():
             _debug_log(f"Historie-Laden fehlgeschlagen: {e}")
 
 def _speichere_historie():
+    import json
     try:
         HISTORIE_DATEI.write_text(json.dumps({
             "diktate": DIKTIER_HISTORIE,

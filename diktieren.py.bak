@@ -569,6 +569,7 @@ class DiktierApp(rumps.App):
         self.toggle_start_zeit = 0
         self.letzter_tap_zeit = 0
         self.clipboard_poller_aktiv = True
+        self._letzter_chunk_ende = ""  # für Dedup an Nahtstellen
 
         self.title = "🎤"
 
@@ -881,6 +882,8 @@ class DiktierApp(rumps.App):
         # Byte-Offset in der WAV, ab dem beim nächsten Schnitt gemessen wird
         # (fürs Restsegment am Ende)
         self.schnitt_offset_sample = 0
+        if _app_instanz is not None:
+            _app_instanz._letzter_chunk_ende = ""
 
         befehl = [
             FFMPEG,
@@ -1106,8 +1109,24 @@ class DiktierApp(rumps.App):
             if self.kleinschreibung_aktiv:
                 text = text.lower()
 
+            # Dedup: wenn dieser Chunk mit dem Ende des vorherigen anfängt, überlappenden Teil kappen
+            if ausschnitt and _app_instanz is not None and _app_instanz._letzter_chunk_ende:
+                letzter = _app_instanz._letzter_chunk_ende
+                text_lower = text.lower().lstrip()
+                for laenge in range(min(len(letzter), 40), 4, -1):
+                    kandidat = letzter[-laenge:].lower()
+                    if text_lower.startswith(kandidat):
+                        # Kappen (Original-Case erhalten indem wir vom Original schneiden)
+                        original_lstripped = text.lstrip()
+                        vorspann = text[:len(text) - len(original_lstripped)]
+                        text = vorspann + original_lstripped[laenge:].lstrip()
+                        _debug_log(f"Nahtstellen-Dedup: {laenge} Zeichen gekappt")
+                        break
             if text.strip():
                 fuege_text_ein(text)
+                # Chunk-Ende merken (letzte ~40 Zeichen ohne Sonderzeichen am Rand)
+                if ausschnitt and _app_instanz is not None:
+                    _app_instanz._letzter_chunk_ende = text.strip()[-40:]
 
             os.unlink(self.tmp_pfad)
 
@@ -1195,6 +1214,8 @@ class DiktierApp(rumps.App):
         self.aufnahme_start_zeit = time.time()
         self.title = "🔴"
         self.schnitt_offset_sample = 0
+        if _app_instanz is not None:
+            _app_instanz._letzter_chunk_ende = ""
 
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         self.tmp_pfad = tmp.name
@@ -1312,7 +1333,7 @@ class DiktierApp(rumps.App):
         for seg in reversed(segmente):
             ende = seg["end"]
             if ziel_sample <= ende <= max_sample:
-                schnitt = ende + int(0.5 * SAMPLE_RATE)  # großzügig damit leise Satzenden mitkommen
+                schnitt = ende + int(0.3 * SAMPLE_RATE)  # kurzes Padding + Dedup fängt Reste  # großzügig damit leise Satzenden mitkommen
                 schnitt = min(schnitt, len(audio_np))
                 _debug_log(f"VAD-Schnitt bei {schnitt/SAMPLE_RATE:.1f}s")
                 return schnitt

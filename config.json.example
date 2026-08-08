@@ -44,5 +44,6 @@
   "historie_max": 20,
   "historie_aktiv": true,
   "clipboard_historie_aktiv": true,
-  "chunking_modus": "live"
+  "chunking_modus": "live",
+  "whisper_no_gpu": false
 }

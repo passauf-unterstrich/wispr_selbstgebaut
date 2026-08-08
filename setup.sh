@@ -277,6 +277,15 @@ echo ""
 echo "Schritt 6 von 7 – Persönliche Config-Dateien"
 echo "─────────────────────────────────────────────"
 
+# Auf älteren Apple-Chips (vor M5) Whisper auf CPU zwingen (Metal-Bug)
+CHIP_INFO=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo "unknown")
+if echo "$CHIP_INFO" | grep -qE "M1|M2|M3|M4"; then
+    NEED_NO_GPU=true
+    echo "• Erkannter Chip: $CHIP_INFO → Whisper läuft auf CPU (Metal-Kompatibilität)"
+else
+    NEED_NO_GPU=false
+fi
+
 for f in config.json assistant_style.md vocabulary.csv; do
     if [ -f "$SCRIPT_DIR/$f" ]; then
         echo "✓ $f existiert schon (nicht überschrieben)."
@@ -284,13 +293,24 @@ for f in config.json assistant_style.md vocabulary.csv; do
         cp "$SCRIPT_DIR/$f.example" "$SCRIPT_DIR/$f"
         echo "✓ $f aus Vorlage angelegt."
     else
-        # vocabulary.csv hat keine .example – leer anlegen
         if [ "$f" = "vocabulary.csv" ]; then
             echo "word,replacement" > "$SCRIPT_DIR/$f"
             echo "✓ $f leer angelegt."
         fi
     fi
 done
+
+# whisper_no_gpu in Config setzen, falls Chip vor M5
+if [ "$NEED_NO_GPU" = "true" ] && [ -f "$SCRIPT_DIR/config.json" ]; then
+    python3 -c "
+import json
+p='$SCRIPT_DIR/config.json'
+c=json.load(open(p))
+c['whisper_no_gpu']=True
+json.dump(c,open(p,'w'),indent=2,ensure_ascii=False)
+"
+    echo "✓ Whisper-Modus auf CPU gesetzt (config.json: whisper_no_gpu=true)"
+fi
 echo ""
 sleep 1.5
 
@@ -331,14 +351,29 @@ echo ""
 echo "🎉 Setup abgeschlossen!"
 echo "═══════════════════════"
 echo ""
-echo "Wichtig: Barrierefreiheit aktivieren"
-echo "─────────────────────────────────────"
-echo "Damit die App Tastatureingaben erkennen kann:"
+echo "Wichtig: ZWEI Berechtigungen aktivieren"
+echo "════════════════════════════════════════"
 echo ""
-echo "  Systemeinstellungen"
-echo "  → Datenschutz & Sicherheit"
-echo "  → Barrierefreiheit"
-echo "  → Terminal hinzufügen (Häkchen setzen)"
+echo "1) BARRIEREFREIHEIT (damit Tastatur-Shortcuts funktionieren):"
+echo ""
+echo "   Systemeinstellungen"
+echo "   → Datenschutz & Sicherheit"
+echo "   → Barrierefreiheit"
+echo "   → Terminal hinzufügen (Häkchen setzen)"
+echo ""
+echo "2) MIKROFON (damit Aufnahmen funktionieren):"
+echo ""
+echo "   Systemeinstellungen"
+echo "   → Datenschutz & Sicherheit"
+echo "   → Mikrofon"
+echo "   → Terminal hinzufügen (Häkchen setzen)"
+echo ""
+echo "   Hinweis: Falls Terminal in der Liste fehlt, einmal 'diktieren' starten"
+echo "   und Aufnahme-Taste drücken → macOS fragt dann selbst und Terminal"
+echo "   erscheint in der Mikrofon-Liste."
+echo ""
+echo "   Nach dem Setzen der Häkchen: Terminal komplett schließen und"
+echo "   neu öffnen (macOS aktualisiert Berechtigungen nicht live)."
 echo ""
 echo "─────────────────────────────────────"
 echo "So startest du die App:"

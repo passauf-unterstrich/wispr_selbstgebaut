@@ -260,15 +260,17 @@ def lade_vocabulary(pfad):
 
 
 def baue_initial_prompt(pfad):
+    """Nur die RICHTIGEN Schreibweisen (Spalte replacement) an Whisper.
+    Fallback auf word wenn replacement leer ist."""
     woerter = []
     if not pfad or not os.path.exists(pfad):
         return ""
     with open(pfad, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            wort = row.get("word", "").strip()
-            if wort:
-                woerter.append(wort)
+            richtig = row.get("replacement", "").strip() or row.get("word", "").strip()
+            if richtig and richtig not in woerter:
+                woerter.append(richtig)
     return ", ".join(woerter)
 
 

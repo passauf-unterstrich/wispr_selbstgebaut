@@ -1118,7 +1118,7 @@ class DiktierApp(rumps.App):
                 text = wende_replacements_an(text, self.session_replacements)
 
             if self.kleinschreibung_aktiv:
-                text = text.lower()
+                text = text.lower().replace("ß", "ss")
 
             # Dedup: wenn dieser Chunk mit dem Ende des vorherigen anfängt, überlappenden Teil kappen
             if _app_instanz is not None and _app_instanz._letzter_chunk_ende:
@@ -1421,7 +1421,7 @@ class DiktierApp(rumps.App):
             if self.session_replacements:
                 text = wende_replacements_an(text, self.session_replacements)
             if self.kleinschreibung_aktiv:
-                text = text.lower()
+                text = text.lower().replace("ß", "ss")
             if text.strip():
                 fuege_text_ein(text)
             try: os.unlink(wav_pfad)

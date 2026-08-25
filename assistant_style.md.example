@@ -1,8 +1,5 @@
-# Mein Stil und Beispiele
-
-Hier kannst du dem KI-Assistenten beibringen, wie er für dich schreiben soll.
-Beispiele:
-
-- Ich schreibe kurze, direkte Sätze.
-- Ich duze meist, außer bei geschäftlichen E-Mails.
-- Fachbegriffe: XYZ statt ABC.
+<!--
+Optional: Schreibe eigene Stilregeln oder Beispiele unter diesen Kommentar.
+Solange dort nichts steht, macht Wispr dem KI-Modell keine Vorgaben zu Sprache
+oder Schreibstil. Der Inhalt dieses Kommentars wird nicht an das Modell gesendet.
+-->

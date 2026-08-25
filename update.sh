@@ -37,7 +37,12 @@ else
 fi
 echo ""
 
-# ── 3. Python-Pakete: atomar und nur aus geprüftem Lock aktualisieren ──
+# ── 3. Festgelegtes lokales whisper.cpp bauen oder prüfen ──
+echo "• Prüfe lokalen Whisper-Kern..."
+/bin/bash "$SCRIPT_DIR/install-whisper-cli.sh"
+echo ""
+
+# ── 4. Python-Pakete: atomar und nur aus geprüftem Lock aktualisieren ──
 if git diff "$AKTUELLER_TAG" "$LETZTER_TAG" --name-only 2>/dev/null | grep -Eq "^(requirements\.txt|vendor/)"; then
     echo "• Der geprüfte Python-Lock hat sich geändert – aktualisiere sicher..."
     /bin/bash "$SCRIPT_DIR/install-python-deps.sh"
@@ -47,7 +52,7 @@ else
 fi
 echo ""
 
-# ── 4. Config-Dateien: nur neue Vorlagen-Werte übernehmen ──
+# ── 5. Config-Dateien: nur neue Vorlagen-Werte übernehmen ──
 # Wenn config.json.example neue Keys hat, die in config.json fehlen, ergänzen
 if [ -f config.json ] && [ -f config.json.example ]; then
     "$SCRIPT_DIR/.venv/bin/python3" <<PYEND
@@ -66,19 +71,21 @@ PYEND
 fi
 echo ""
 
-# ── 5. Native macOS-Starter-App bauen oder prüfen ──
+# ── 6. Native macOS-Starter-App bauen oder prüfen ──
 echo "• Prüfe native Wispr.app..."
 /bin/bash "$SCRIPT_DIR/build-macos-app.sh"
 echo ""
 
-# ── 6. Terminal-Befehle reparieren/aktualisieren ──
+# ── 7. Terminal-Befehle reparieren/aktualisieren ──
 if [ -f "$SCRIPT_DIR/install-terminal-commands.sh" ]; then
     echo "• Prüfe Terminal-Kurzbefehle..."
     /bin/bash "$SCRIPT_DIR/install-terminal-commands.sh"
     echo ""
 fi
 
-# ── 7. Fertig ──
+# ── 8. Fertig ──
 echo "🎉 Update fertig."
 echo ""
 echo "Zum Starten: neues Terminal-Fenster öffnen und 'diktieren' oder 'diktiere' tippen."
+echo "Nach erfolgreichem Funktionstest können alte technische Sicherungen mit"
+echo "'./cleanup-old-installation.sh' wiederherstellbar in den Papierkorb verschoben werden."

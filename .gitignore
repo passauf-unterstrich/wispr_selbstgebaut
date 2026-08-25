@@ -28,6 +28,9 @@ config.json
 .venv/
 .venv.neu/
 whisper.cpp/
+whisper.cpp.neu/
+whisper.cpp.backup-*/
+whisper.cpp.unvollstaendig-*/
 
 # Lokal erzeugte native Starter-App und Compiler-Zwischendateien
 Wispr.app/

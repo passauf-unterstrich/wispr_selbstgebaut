@@ -25,6 +25,11 @@ diktiere
 
 Ein Update wird mit `diktieren-update` gestartet.
 
+Nach einem erfolgreich getesteten größeren Update entfernt
+`./cleanup-old-installation.sh` ausschließlich bekannte alte technische
+Sicherungen. Sie werden zur Wiederherstellbarkeit in den Papierkorb verschoben;
+persönliche Konfiguration, Vokabular, Historie und Modelle sind ausgeschlossen.
+
 Im Menü der laufenden App kann **Bei Anmeldung starten** ein- und ausgeschaltet
 werden. Die Option ist zunächst aus und wird von macOS unter **Systemeinstellungen
 → Allgemein → Anmeldeobjekte & Erweiterungen** verwaltet. Es werden dafür weder

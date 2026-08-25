@@ -141,30 +141,9 @@ echo "(rumps, pynput, silero-vad, torch, ...)"
 echo ""
 sleep 1.5
 
-# ── whisper.cpp selbst bauen (feste Version, chip-unabhängig) ──
-WHISPER_DIR="$SCRIPT_DIR/whisper.cpp"
-WHISPER_BIN="$WHISPER_DIR/build/bin/whisper-cli"
-WHISPER_TAG="v1.7.5"  # getestete Version, läuft auf allen Apple Silicon
-
-if [ -f "$WHISPER_BIN" ]; then
-    echo "✓ whisper-cli schon gebaut."
-else
-    echo ""
-    echo "• Baue whisper.cpp aus Quellcode (~3 Min beim ersten Mal)..."
-    if [ ! -d "$WHISPER_DIR" ]; then
-        git clone --quiet --depth 1 --branch "$WHISPER_TAG" \
-            https://github.com/ggml-org/whisper.cpp.git "$WHISPER_DIR"
-    fi
-    cd "$WHISPER_DIR"
-    mit_spinner "Konfiguriere Build (cmake)" cmake -B build -DCMAKE_BUILD_TYPE=Release
-    mit_spinner "Kompiliere whisper-cli (~3 Min)" cmake --build build --config Release -j
-    cd "$SCRIPT_DIR"
-    if [ ! -f "$WHISPER_BIN" ]; then
-        echo "✗ whisper-cli-Build fehlgeschlagen"
-        exit 1
-    fi
-    echo "✓ whisper-cli gebaut."
-fi
+# ── whisper.cpp selbst bauen (exakter geprüfter Commit, atomar) ──
+mit_spinner "Geprüften whisper-cli bauen oder kontrollieren" \
+    /bin/bash "$SCRIPT_DIR/install-whisper-cli.sh"
 
 mit_spinner "Geprüfte Python-Pakete installieren und testen" \
     /bin/bash "$SCRIPT_DIR/install-python-deps.sh"
@@ -372,8 +351,8 @@ echo ""
 echo "   Hinweis: Beim ersten Start mit 'diktieren' fragt macOS selbst nach"
 echo "   beiden Rechten. Dabei erscheint Wispr in den Listen."
 echo ""
-echo "   Nach dem Setzen der Häkchen: Wispr über das Menüleisten-Symbol"
-echo "   beenden und mit 'diktieren' neu starten."
+echo "   Wispr wartet auf die Freigabe und startet danach automatisch."
+echo "   Ein zusätzlicher Neustart der App ist nicht erforderlich."
 echo ""
 echo "─────────────────────────────────────"
 echo "So startest du die App:"

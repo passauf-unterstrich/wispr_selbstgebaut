@@ -48,6 +48,7 @@ xcrun swiftc \
     -framework AppKit \
     -framework ApplicationServices \
     -framework AVFoundation \
+    -framework ServiceManagement \
     "$SCRIPT_DIR/native/WisprLauncher.swift" \
     -o "$NEUE_APP/Contents/MacOS/WisprLauncher"
 

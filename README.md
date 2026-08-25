@@ -25,6 +25,11 @@ diktiere
 
 Ein Update wird mit `diktieren-update` gestartet.
 
+Im Menü der laufenden App kann **Bei Anmeldung starten** ein- und ausgeschaltet
+werden. Die Option ist zunächst aus und wird von macOS unter **Systemeinstellungen
+→ Allgemein → Anmeldeobjekte & Erweiterungen** verwaltet. Es werden dafür weder
+Administratorrechte noch ein versteckter LaunchAgent verwendet.
+
 ## Datenschutz und Berechtigungen
 
 - Mikrofon- und Barrierefreiheitszugriff werden für Aufnahme, globale

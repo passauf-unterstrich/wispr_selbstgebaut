@@ -4,7 +4,7 @@ Lokale Diktierfunktion – Menu Bar App
 ======================================
 Läuft als Icon in der Menüleiste.
 Globaler Shortcut: alt_r halten → aufnehmen → loslassen → Text erscheint.
-Startet automatisch beim Mac-Start.
+Kann auf Wunsch über das Menü bei der macOS-Anmeldung starten.
 """
 
 import os
@@ -33,6 +33,29 @@ import shutil
 # Ordner in dem dieses Skript liegt – App-Dateien werden relativ dazu gefunden
 SCRIPT_DIR  = Path(__file__).resolve().parent
 MODELLE_DIR = SCRIPT_DIR / "modelle"
+WISPR_LAUNCHER = SCRIPT_DIR / "Wispr.app" / "Contents" / "MacOS" / "WisprLauncher"
+
+
+def _login_item_befehl(aktion):
+    """Verwaltet den Autostart ausschließlich über Apples SMAppService."""
+    erlaubte_aktionen = {"status", "enable", "disable", "open-settings"}
+    if aktion not in erlaubte_aktionen or not WISPR_LAUNCHER.is_file():
+        return "not-found", "Der native Wispr-Starter wurde nicht gefunden."
+    try:
+        ergebnis = subprocess.run(
+            [str(WISPR_LAUNCHER), f"--login-item-{aktion}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return "error", str(e)
+    status = ergebnis.stdout.strip().splitlines()[-1] if ergebnis.stdout.strip() else "error"
+    fehler = ergebnis.stderr.strip()
+    if ergebnis.returncode != 0:
+        return "error", fehler or "macOS konnte die Einstellung nicht ändern."
+    return status, fehler
 
 # Verfügbare Whisper-Modelle
 MODELLE = {
@@ -623,11 +646,19 @@ class DiktierApp(rumps.App):
              else "📋 Zwischenablage: pausiert"),
             callback=self.wechsle_clipboard_poller,
         )
+        login_status, _ = _login_item_befehl("status")
+        self._login_item_item = rumps.MenuItem(
+            "Bei Anmeldung starten",
+            callback=self.wechsle_login_item,
+        )
+        self._login_item_item.state = login_status == "enabled"
         try:
             self.menu.add(rumps.separator)
             self.menu.add(self._diktier_submenu)
             self.menu.add(self._clipboard_submenu)
             self.menu.add(self._clipboard_toggle_item)
+            self.menu.add(rumps.separator)
+            self.menu.add(self._login_item_item)
         except Exception as e:
             _debug_log(f"Historie-Menü-Anhängen fehlgeschlagen: {e}")
 
@@ -808,6 +839,31 @@ class DiktierApp(rumps.App):
         sender.state = self.kleinschreibung_aktiv
         status = "an" if self.kleinschreibung_aktiv else "aus"
         rumps.notification("Kleinschreibung", "", f"Kleinschreibung {status}")
+
+    def wechsle_login_item(self, sender):
+        aktueller_status, _ = _login_item_befehl("status")
+        aktion = "disable" if aktueller_status == "enabled" else "enable"
+        neuer_status, fehler = _login_item_befehl(aktion)
+        sender.state = neuer_status == "enabled"
+
+        if neuer_status == "enabled":
+            rumps.notification("Autostart", "", "Wispr startet künftig bei deiner Anmeldung.")
+        elif neuer_status == "not-registered":
+            rumps.notification("Autostart", "", "Automatischer Start ist ausgeschaltet.")
+        elif neuer_status == "requires-approval":
+            _login_item_befehl("open-settings")
+            rumps.alert(
+                title="Freigabe durch macOS erforderlich",
+                message=(
+                    "Aktiviere Wispr unter „Allgemein > Anmeldeobjekte & Erweiterungen“. "
+                    "Die passenden Systemeinstellungen wurden geöffnet."
+                ),
+            )
+        else:
+            rumps.alert(
+                title="Autostart konnte nicht geändert werden",
+                message=fehler or "Bitte führe zunächst ./build-macos-app.sh aus.",
+            )
 
     def wechsle_mikrofon(self, sender):
         global MIKROFON

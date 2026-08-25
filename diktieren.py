@@ -448,11 +448,39 @@ def _beende_ffmpeg_sauber(prozess, timeout=2.0):
 
 SYSTEM_PROMPT_BASIS = (
     "Führe die Anweisung des Nutzers aus. "
-    "Gib ausschließlich das unmittelbar verwendbare Ergebnis aus. "
-    "Keine Einleitung, keine Wiederholung der Aufgabe, kein Kommentar, "
-    "keine Erklärung und kein Abschluss. "
-    "Füge keine zusätzlichen Anführungszeichen oder sonstige Umrahmung hinzu."
+    "Deine gesamte Antwort darf ausschließlich aus dem unmittelbar verwendbaren "
+    "Ergebnis bestehen. Das erste Zeichen deiner Antwort muss bereits das erste "
+    "Zeichen des Ergebnisses sein; das letzte Zeichen muss das letzte Zeichen des "
+    "Ergebnisses sein. Schreibe davor und danach nichts. Keine Einleitung, "
+    "Bestätigung, Wiederholung der Aufgabe, Überschrift, Erklärung, Anmerkung oder "
+    "Abschluss. Umrahme das Ergebnis nicht mit Anführungszeichen, Markdown-"
+    "Codeblöcken oder anderen zusätzlichen Zeichen."
 )
+
+
+def bereinige_ki_ausgabe(text: str) -> str:
+    """Entfernt nur typische Zeichen, die die gesamte KI-Ausgabe umrahmen."""
+    text = text.strip()
+    if text.startswith("```") and text.endswith("```"):
+        inneres = text[3:-3].strip()
+        # Ein optionales Markdown-Sprachlabel gehört ebenfalls zur Umrahmung.
+        if "\n" in inneres:
+            erste_zeile, rest = inneres.split("\n", 1)
+            if re.fullmatch(r"[A-Za-z0-9_+.-]+", erste_zeile.strip()):
+                inneres = rest.strip()
+        text = inneres
+    anführungszeichen_paare = (
+        ('"', '"'),
+        ("'", "'"),
+        ('„', '“'),
+        ('“', '”'),
+        ('«', '»'),
+        ('‹', '›'),
+    )
+    for anfang, ende in anführungszeichen_paare:
+        if len(text) >= 2 and text.startswith(anfang) and text.endswith(ende):
+            return text[len(anfang):-len(ende)].strip()
+    return text
 
 
 def frage_ollama(befehl: str, style_prompt: str) -> str:
@@ -469,7 +497,7 @@ def frage_ollama(befehl: str, style_prompt: str) -> str:
     }
     response = requests.post(OLLAMA_URL, json=payload, timeout=60)
     response.raise_for_status()
-    return response.json()["message"]["content"].strip()
+    return bereinige_ki_ausgabe(response.json()["message"]["content"])
 
 
 def frage_claude(befehl: str, style_prompt: str) -> str:
@@ -484,7 +512,7 @@ def frage_claude(befehl: str, style_prompt: str) -> str:
         system=system,
         messages=[{"role": "user", "content": befehl}],
     )
-    return message.content[0].text.strip()
+    return bereinige_ki_ausgabe(message.content[0].text)
 
 # ─────────────────────────────────────────
 # MENU BAR APP

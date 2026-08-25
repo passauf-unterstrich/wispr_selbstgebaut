@@ -1,0 +1,14 @@
+# Direkte Python-Abhängigkeiten von Wispr.
+#
+# Diese Datei wird von Menschen gepflegt. requirements.txt wird daraus für
+# Python 3.13 auf macOS erzeugt und enthält exakte Versionen + SHA256-Hashes.
+rumps==0.4.0
+pyperclip==1.11.0
+requests==2.34.2
+pynput==1.8.2
+anthropic==0.104.1
+silero-vad==6.2.1
+soundfile==0.14.0
+torch==2.13.0
+torchaudio==2.11.0
+numpy==2.5.1

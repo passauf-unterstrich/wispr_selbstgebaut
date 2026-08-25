@@ -8,6 +8,10 @@
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+echo "Prüfe Mac-Kompatibilität..."
+/bin/bash "$SCRIPT_DIR/check-platform.sh"
+sleep 1
+
 # ── Spinner für stille Downloads/Installations ──
 mit_spinner() {
     # Nutzung: mit_spinner "Nachricht" befehl arg1 arg2 ...
@@ -106,10 +110,10 @@ sleep 1.5
 # ────────────────────────────────────────────────────────────
 clear
 echo ""
-echo "Schritt 2 von 7 – Programme (whisper-cli, ffmpeg, ollama)"
-echo "──────────────────────────────────────────────────────────"
+echo "Schritt 2 von 7 – Programme (Python 3.13, ffmpeg, ollama)"
+echo "─────────────────────────────────────────────────────────"
 
-for pkg in cmake ffmpeg ollama; do
+for pkg in cmake ffmpeg ollama python@3.13; do
     if brew list "$pkg" &>/dev/null; then
         echo "✓ $pkg ist installiert."
     else
@@ -162,17 +166,8 @@ else
     echo "✓ whisper-cli gebaut."
 fi
 
-# venv anlegen (isoliert vom System-Python)
-VENV_DIR="$SCRIPT_DIR/.venv"
-if [ ! -d "$VENV_DIR" ]; then
-    echo "• Lege virtuelle Python-Umgebung an..."
-    python3 -m venv "$VENV_DIR"
-fi
-
-VENV_PIP="$VENV_DIR/bin/pip"
-mit_spinner "pip aktualisieren" "$VENV_PIP" install --upgrade pip --quiet
-mit_spinner "Python-Pakete installieren (torch, rumps, silero-vad, ...)" \
-    "$VENV_PIP" install --quiet -r "$SCRIPT_DIR/requirements.txt"
+mit_spinner "Geprüfte Python-Pakete installieren und testen" \
+    /bin/bash "$SCRIPT_DIR/install-python-deps.sh"
 sleep 1.5
 
 # ────────────────────────────────────────────────────────────
@@ -252,7 +247,7 @@ else
 
     # SHA256-Prüfung – schützt vor manipuliertem Download
     ERWARTET="6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"
-    ERHALTEN=$(shasum -a 256 "$MEDIUM" | awk '"'"'{print $1}'"'"')
+    ERHALTEN=$(shasum -a 256 "$MEDIUM" | awk '{print $1}')
     if [ "$ERHALTEN" != "$ERWARTET" ]; then
         echo ""
         echo "✗ SHA256-Prüfung fehlgeschlagen!"
@@ -316,35 +311,36 @@ for f in config.json assistant_style.md vocabulary.csv; do
     fi
 done
 
+# Persönliche Texte und Einstellungen sind nicht für andere lokale Accounts.
+for f in config.json assistant_style.md vocabulary.csv .historie.json; do
+    if [ -f "$SCRIPT_DIR/$f" ]; then
+        chmod 600 "$SCRIPT_DIR/$f"
+    fi
+done
+
 echo ""
 sleep 1.5
 
 # ────────────────────────────────────────────────────────────
-# SCHRITT 7: Terminal-Kurzbefehle
+# SCHRITT 7: Native App + Terminal-Kurzbefehle
 # ────────────────────────────────────────────────────────────
 clear
 echo ""
-echo "Schritt 7 von 7 – Terminal-Kurzbefehle"
-echo "───────────────────────────────────────"
+echo "Schritt 7 von 7 – Wispr.app + Terminal-Kurzbefehle"
+echo "───────────────────────────────────────────────"
+echo ""
+echo "Die kleine native Wispr.app sorgt dafür, dass macOS Mikrofon- und"
+echo "Bedienungshilfenrechte Wispr statt dem gesamten Terminal zuordnet."
+echo ""
+/bin/bash "$SCRIPT_DIR/build-macos-app.sh"
 echo ""
 echo "Ab jetzt kannst du im Terminal tippen:"
 echo ""
 echo "  diktieren         → startet die App"
+echo "  diktiere          → startet ebenfalls die App"
 echo "  diktieren-update  → aktualisiert auf neueste Version"
 echo ""
-
-ALIAS_START="alias diktieren=\"cd '$SCRIPT_DIR' && '$VENV_DIR/bin/python3' diktieren.py\""
-ALIAS_UPDATE="alias diktieren-update=\"bash '$SCRIPT_DIR/update.sh'\""
-
-# Alte Einträge entfernen (falls Setup schon mal lief)
-if [ -f ~/.zshrc ]; then
-    sed -i.bak '/alias diktieren=/d; /alias diktieren-update=/d' ~/.zshrc
-    rm -f ~/.zshrc.bak
-fi
-
-echo "$ALIAS_START"  >> ~/.zshrc
-echo "$ALIAS_UPDATE" >> ~/.zshrc
-echo "✓ Kurzbefehle in ~/.zshrc eingetragen."
+/bin/bash "$SCRIPT_DIR/install-terminal-commands.sh"
 echo ""
 sleep 1.5
 
@@ -364,28 +360,36 @@ echo ""
 echo "   Systemeinstellungen"
 echo "   → Datenschutz & Sicherheit"
 echo "   → Barrierefreiheit"
-echo "   → Terminal hinzufügen (Häkchen setzen)"
+echo "   → Wispr hinzufügen bzw. den Schalter bei Wispr aktivieren"
 echo ""
 echo "2) MIKROFON (damit Aufnahmen funktionieren):"
 echo ""
 echo "   Systemeinstellungen"
 echo "   → Datenschutz & Sicherheit"
 echo "   → Mikrofon"
-echo "   → Terminal hinzufügen (Häkchen setzen)"
+echo "   → Den Schalter bei Wispr aktivieren"
 echo ""
-echo "   Hinweis: Falls Terminal in der Liste fehlt, einmal 'diktieren' starten"
-echo "   und Aufnahme-Taste drücken → macOS fragt dann selbst und Terminal"
-echo "   erscheint in der Mikrofon-Liste."
+echo "   Hinweis: Beim ersten Start mit 'diktieren' fragt macOS selbst nach"
+echo "   beiden Rechten. Dabei erscheint Wispr in den Listen."
 echo ""
-echo "   Nach dem Setzen der Häkchen: Terminal komplett schließen und"
-echo "   neu öffnen (macOS aktualisiert Berechtigungen nicht live)."
+echo "   Nach dem Setzen der Häkchen: Wispr über das Menüleisten-Symbol"
+echo "   beenden und mit 'diktieren' neu starten."
 echo ""
 echo "─────────────────────────────────────"
 echo "So startest du die App:"
 echo ""
 echo "  1. Terminal-Fenster schließen"
 echo "  2. Neues Terminal-Fenster öffnen"
-echo "  3. Tippe:  diktieren"
+echo "  3. Tippe:  diktieren   (oder: diktiere)"
+echo ""
+echo "Das Setup hat deine Login-Shell automatisch erkannt und den"
+echo "Terminal-Pfad passend eingerichtet. Nach einem Neustart kannst du"
+echo "die App mit beiden Befehlen jederzeit wieder starten."
+echo ""
+echo "Datenschutz: Normale Diktate und der lokale KI-Modus bleiben auf"
+echo "diesem Mac. Das Mitschneiden der allgemeinen Zwischenablage ist bei"
+echo "Neuinstallationen aus. Nur der optionale Claude-Modus sendet Text an"
+echo "einen externen API-Dienst."
 echo ""
 echo "Bei Fragen: passauf-unterstrich auf GitHub"
 echo ""

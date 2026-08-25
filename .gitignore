@@ -26,4 +26,10 @@ dist/
 config.json
 .historie.json
 .venv/
+.venv.neu/
 whisper.cpp/
+
+# Lokal erzeugte native Starter-App und Compiler-Zwischendateien
+Wispr.app/
+.Wispr.app.*/
+.build-wispr-app/

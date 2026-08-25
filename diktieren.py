@@ -24,8 +24,6 @@ from pynput.keyboard import Controller as KeyboardController
 import re
 from pynput import keyboard
 
-import urllib.request
-
 # ─────────────────────────────────────────
 # KONFIGURATION
 # ─────────────────────────────────────────
@@ -360,7 +358,7 @@ def fuege_text_ein(text, zu_historie=True):
     if not text or not text.strip():
         return
     # Historie-Aufnahme (nur bei echten Diktaten, nicht bei Historie-Klicks)
-    if zu_historie:
+    if zu_historie and HISTORIE_AKTIV:
         try:
             _historie_hinzufuegen(text.strip(), DIKTIER_HISTORIE)
             _speichere_historie()
@@ -457,9 +455,14 @@ def frage_claude(befehl: str, style_prompt: str) -> str:
 
 # ─── Historie (Diktate + Clipboard) ───────────────────────────────
 try:
-    HISTORIE_MAX = int(_json.loads(_config_path.read_text()).get("historie_max", 20))
+    _historie_cfg = _json.loads(_config_path.read_text())
+    HISTORIE_MAX = int(_historie_cfg.get("historie_max", 20))
+    HISTORIE_AKTIV = bool(_historie_cfg.get("historie_aktiv", True))
+    CLIPBOARD_HISTORIE_AKTIV = bool(_historie_cfg.get("clipboard_historie_aktiv", False))
 except Exception:
     HISTORIE_MAX = 20
+    HISTORIE_AKTIV = True
+    CLIPBOARD_HISTORIE_AKTIV = False
 HISTORIE_DATEI = SCRIPT_DIR / ".historie.json"
 DIKTIER_HISTORIE = []
 CLIPBOARD_HISTORIE = []
@@ -471,9 +474,12 @@ def _lade_historie():
     global DIKTIER_HISTORIE, CLIPBOARD_HISTORIE
     if HISTORIE_DATEI.exists():
         try:
+            HISTORIE_DATEI.chmod(0o600)
             d = json.loads(HISTORIE_DATEI.read_text())
-            DIKTIER_HISTORIE = d.get("diktate", [])[:HISTORIE_MAX]
-            CLIPBOARD_HISTORIE = d.get("clipboard", [])[:HISTORIE_MAX]
+            if HISTORIE_AKTIV:
+                DIKTIER_HISTORIE = d.get("diktate", [])[:HISTORIE_MAX]
+            if CLIPBOARD_HISTORIE_AKTIV:
+                CLIPBOARD_HISTORIE = d.get("clipboard", [])[:HISTORIE_MAX]
         except Exception as e:
             _debug_log(f"Historie-Laden fehlgeschlagen: {e}")
 
@@ -484,6 +490,9 @@ def _speichere_historie():
             "diktate": DIKTIER_HISTORIE,
             "clipboard": CLIPBOARD_HISTORIE,
         }, ensure_ascii=False, indent=2))
+        # Diktate und Zwischenablage koennen vertrauliche Inhalte enthalten.
+        # Nur der angemeldete Nutzer darf die Datei lesen oder veraendern.
+        HISTORIE_DATEI.chmod(0o600)
     except Exception as e:
         _debug_log(f"Historie-Speichern fehlgeschlagen: {e}")
 
@@ -493,7 +502,7 @@ def _historie_hinzufuegen(text, liste):
     text = text.strip()
     # Zu große Einträge (>50 KB) nicht speichern – nur ins Menü käme das trotzdem
     # nicht sinnvoll rein und die .historie.json würde aufblähen
-    if len(text) > 5_000_000:  # 5 MB pro Eintrag – erst bei absurd großen Blöcken abbrechen
+    if len(text) > 50_000:
         return
     if text in liste:
         liste.remove(text)
@@ -515,10 +524,19 @@ class DiktierApp(rumps.App):
         super().__init__("🎤", quit_button="Beenden")
 
         # Modell-Untermenü aufbauen
+        vorhandene_modelle = {
+            name: pfad for name, pfad in MODELLE.items() if os.path.exists(pfad)
+        }
+        self.aktives_modell = (
+            AKTIVES_MODELL if AKTIVES_MODELL in vorhandene_modelle
+            else next(iter(vorhandene_modelle), AKTIVES_MODELL)
+        )
         modell_menu = rumps.MenuItem("Modell")
-        for name in MODELLE:
+        for name, pfad in vorhandene_modelle.items():
+            # Nur bereits gepruefte/installierte Modelle anbieten. Downloads
+            # laufen bewusst ueber setup.sh mit SHA256-Pruefung.
             item = rumps.MenuItem(name, callback=self.wechsle_modell)
-            if name == AKTIVES_MODELL:
+            if name == self.aktives_modell:
                 item.state = True  # Häkchen
             modell_menu.add(item)
 
@@ -557,8 +575,6 @@ class DiktierApp(rumps.App):
         self.style_prompt = ""
         self.ffmpeg_prozess = None
         self.tmp_pfad = None
-        self.aktives_modell = AKTIVES_MODELL
-
         self._diktat_timer     = None
 
         # KI-State
@@ -579,7 +595,7 @@ class DiktierApp(rumps.App):
         self.toggle_aktiv = False
         self.toggle_start_zeit = 0
         self.letzter_tap_zeit = 0
-        self.clipboard_poller_aktiv = True
+        self.clipboard_poller_aktiv = CLIPBOARD_HISTORIE_AKTIV
         self._letzter_chunk_ende = ""  # für Dedup an Nahtstellen
 
         self.title = "🎤"
@@ -603,7 +619,8 @@ class DiktierApp(rumps.App):
         self._baue_historie_menues()
         threading.Thread(target=self._clipboard_poller, daemon=True).start()
         self._clipboard_toggle_item = rumps.MenuItem(
-            "📋 Zwischenablage: mitschneiden",
+            ("📋 Zwischenablage: mitschneiden" if self.clipboard_poller_aktiv
+             else "📋 Zwischenablage: pausiert"),
             callback=self.wechsle_clipboard_poller,
         )
         try:
@@ -623,18 +640,16 @@ class DiktierApp(rumps.App):
         rumps.notification("Diktierfunktion", "", f"Bereit – {shortcut_als_text(SHORTCUT)}: Diktat  |  {shortcut_als_text(SHORTCUT_KI)}: KI")
 
     def pruefe_setup(self):
-        # ── Whisper-Modelle ──────────────────────────────────
-        for name, pfad in MODELLE.items():
-            if not os.path.exists(pfad):
-                self.title = "⬇️"
-                rumps.notification("Setup", f"Lade Whisper-Modell '{name}'...", "Bitte warten (~1–3 GB)")
-                os.makedirs(os.path.dirname(pfad), exist_ok=True)
-                url = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{name}.bin"
-                try:
-                    urllib.request.urlretrieve(url, pfad)
-                    rumps.notification("Setup", f"Whisper '{name}' bereit ✓", "")
-                except Exception as e:
-                    rumps.notification("Setup Fehler", f"Whisper '{name}' fehlgeschlagen", str(e))
+        # Whisper-Downloads laufen ausschliesslich ueber setup.sh, wo das
+        # Modell gegen einen fest hinterlegten SHA256-Hash geprueft wird.
+        modell_pfad = MODELLE.get(self.aktives_modell)
+        if not modell_pfad or not os.path.exists(modell_pfad):
+            rumps.notification(
+                "Setup unvollständig",
+                f"Whisper-Modell '{self.aktives_modell}' fehlt",
+                "Im Terminal: cd zum Wispr-Ordner && bash setup.sh",
+            )
+            return
 
         # ── Ollama installiert? ──────────────────────────────
         if subprocess.run(["which", "ollama"], capture_output=True).returncode != 0:
@@ -760,6 +775,7 @@ class DiktierApp(rumps.App):
             cfg = json.loads((SCRIPT_DIR / "config.json").read_text())
             cfg["chunking_modus"] = CHUNKING_MODUS
             (SCRIPT_DIR / "config.json").write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
+            (SCRIPT_DIR / "config.json").chmod(0o600)
         except Exception as e:
             _debug_log(f"Modus-Speichern fehlgeschlagen: {e}")
         # Menü-Label updaten
@@ -778,6 +794,14 @@ class DiktierApp(rumps.App):
                 else "📋 Zwischenablage: pausiert"
             )
         _debug_log(f"Clipboard-Poller: {'aktiv' if self.clipboard_poller_aktiv else 'pausiert'}")
+        try:
+            cfg_path = SCRIPT_DIR / "config.json"
+            cfg = _json.loads(cfg_path.read_text()) if cfg_path.exists() else {}
+            cfg["clipboard_historie_aktiv"] = self.clipboard_poller_aktiv
+            cfg_path.write_text(_json.dumps(cfg, indent=2, ensure_ascii=False))
+            cfg_path.chmod(0o600)
+        except Exception as e:
+            _debug_log(f"Clipboard-Einstellung speichern fehlgeschlagen: {e}")
 
     def wechsle_kleinschreibung(self, sender):
         self.kleinschreibung_aktiv = not self.kleinschreibung_aktiv
@@ -800,6 +824,7 @@ class DiktierApp(rumps.App):
             cfg = _j.loads(cfg_path.read_text()) if cfg_path.exists() else {}
             cfg["mikrofon"] = MIKROFON
             cfg_path.write_text(_j.dumps(cfg, indent=2, ensure_ascii=False))
+            cfg_path.chmod(0o600)
         except Exception as e:
             rumps.notification("Fehler", "Config speichern", str(e))
             return
@@ -1515,4 +1540,3 @@ class DiktierApp(rumps.App):
 if __name__ == "__main__":
     app = DiktierApp()
     app.run()
-

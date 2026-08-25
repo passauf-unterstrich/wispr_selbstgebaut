@@ -43,7 +43,7 @@
   "doppel_tap_ms": 400,
   "historie_max": 20,
   "historie_aktiv": true,
-  "clipboard_historie_aktiv": true,
+  "clipboard_historie_aktiv": false,
   "chunking_modus": "live",
   "whisper_no_gpu": false
 }

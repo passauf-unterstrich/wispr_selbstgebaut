@@ -1,0 +1,29 @@
+#!/bin/bash
+# Stabiler Terminal-Starter. Er öffnet die native Wispr.app über macOS, damit
+# Mikrofon- und Bedienungshilfenrechte nicht dem ganzen Terminal gehören.
+set -e
+
+QUELLE="${BASH_SOURCE[0]}"
+while [ -L "$QUELLE" ]; do
+    QUELL_ORDNER="$(cd -P "$(dirname "$QUELLE")" && pwd)"
+    LINK_ZIEL="$(readlink "$QUELLE")"
+    case "$LINK_ZIEL" in
+        /*) QUELLE="$LINK_ZIEL" ;;
+        *)  QUELLE="$QUELL_ORDNER/$LINK_ZIEL" ;;
+    esac
+done
+
+APP_DIR="$(cd -P "$(dirname "$QUELLE")/.." && pwd)"
+NATIVE_APP="$APP_DIR/Wispr.app"
+
+if [ ! -x "$APP_DIR/.venv/bin/python3" ] || [ ! -d "$NATIVE_APP" ]; then
+    echo "Wispr ist noch nicht vollstaendig eingerichtet."
+    echo "Bitte zuerst ausfuehren: cd \"$APP_DIR\" && bash setup.sh"
+    exit 1
+fi
+
+if [ "$#" -gt 0 ]; then
+    echo "Hinweis: Wispr benötigt beim Start keine zusätzlichen Argumente."
+fi
+
+exec /usr/bin/open "$NATIVE_APP"

@@ -1,9 +1,48 @@
-rumps
-pyperclip
-requests
-pynput
-anthropic
-silero-vad
-soundfile
-torch
-numpy
+# Wispr Python-Lock: CPython 3.13, Apple Silicon (arm64), macOS 14+
+# Automatisch aus dem geprüften pip-Installationsbericht erzeugt.
+# Jede erlaubte Paketdatei ist mit SHA256 festgeschrieben.
+
+./vendor/rumps-0.4.0-py3-none-any.whl --hash=sha256:f825d67d14787794cc9a3c0061425ef1d5f0f85a142c429b9453a8f5c4ba021f
+annotated-types==0.8.0 --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
+anthropic==0.104.1 --hash=sha256:35c8cb456f5a4405aafe1f10f03f6fcc54fa51fa8ec01d655cc4b437d120e9b7
+anyio==4.14.2 --hash=sha256:9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494
+certifi==2026.7.22 --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775
+cffi==2.1.1 --hash=sha256:19ee6127ee34de7d83ce3d371ebc5ed91addbdcc39f9ab15ce4eb35a4e534971
+charset-normalizer==3.5.1 --hash=sha256:e90251c0c7bdd54a100a0dce3c07b7e637278c93af29dbf78ebb89a58c4bac7d
+distro==1.9.0 --hash=sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2
+docstring_parser==0.18.0 --hash=sha256:b3fcbed555c47d8479be0796ef7e19c2670d428d72e96da63f3a40122860374b
+filelock==3.32.4 --hash=sha256:22e58ca3b1ae3b98993b762d7338367ae64fe50252bf78d59da3bfebcdf1cedd
+fsspec==2026.7.0 --hash=sha256:b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279
+h11==0.16.0 --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
+httpcore==1.0.9 --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55
+httpx==0.28.1 --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
+idna==3.19 --hash=sha256:815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4
+Jinja2==3.1.6 --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
+jiter==0.16.0 --hash=sha256:d28bb3c26762358dadf3e5bf0bccd29ae987d65e6988d2e6f49829c76b003c09
+MarkupSafe==3.0.3 --hash=sha256:116bb52f642a37c115f517494ea5feb03889e04df47eeff5b130b1808ce7c219
+mpmath==1.3.0 --hash=sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c
+networkx==3.6.1 --hash=sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762
+numpy==2.5.1 --hash=sha256:6165343f81b56ef8f514f396989e529b61d9dc709b99421b07e9f3e698e2287d
+packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pycparser==3.0 --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
+pydantic==2.13.4 --hash=sha256:45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba
+pydantic_core==2.46.4 --hash=sha256:c94f0688e7b8d0a67abf40e57a7eaaecd17cc9586706a31b76c031f63df052b4
+pynput==1.8.2 --hash=sha256:8cc38cf13a6ab2749cb375678be8a0fd705d7ce49c8001ff5db4007a723bbef1
+pyobjc-core==12.2.2 --hash=sha256:950bd2d9c74634398c4e3d24ef2f213d4e23d705083697464fa67afedc53c1ad
+pyobjc-framework-ApplicationServices==12.2.2 --hash=sha256:3b5693a377480cf127caa1c8c835b8620896971029c545d99d01aa31a2c38159
+pyobjc-framework-Cocoa==12.2.2 --hash=sha256:600b1723184ca094931330e79355274949965460e23de38628d601b5a967baf9
+pyobjc-framework-CoreText==12.2.2 --hash=sha256:dbd0f288a859e359ee8e7ccf45bc2c489f38ae1087c21468b61d700433e0c91b
+pyobjc-framework-Quartz==12.2.2 --hash=sha256:0ec9751904ef975bf0789d760dc4fadcb400edc4ffe4a736eb54971968babe5c
+pyperclip==1.11.0 --hash=sha256:299403e9ff44581cb9ba2ffeed69c7aa96a008622ad0c46cb575ca75b5b84273
+requests==2.34.2 --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+setuptools==84.0.0 --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670
+silero-vad==6.2.1 --hash=sha256:09de93c4d874bb19c53e62a47dd38be5f163cedad2b5599583231f2a84ef79cb
+six==1.17.0 --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274
+sniffio==1.3.1 --hash=sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2
+soundfile==0.14.0 --hash=sha256:d828d35a059626da52f1415b5faee610aeab393319cb3fc4a9aef47b619fc14c
+sympy==1.14.0 --hash=sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5
+torch==2.13.0 --hash=sha256:33449899ce5496c1b84b4853179d94fd102028ae1407314d9fb956bb79e70d09
+torchaudio==2.11.0 --hash=sha256:e3f9696a9ef1d49acc452159b052370c636406d072e9d8f10895fda87b591ea9
+typing-inspection==0.4.4 --hash=sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147
+typing_extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+urllib3==2.7.0 --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
